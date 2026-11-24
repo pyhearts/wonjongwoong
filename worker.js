@@ -48,7 +48,7 @@ async function handleReset(request, env) {
   if (!authRes.ok) return json({ error: 'Admin authentication failed.' }, 401);
   const account = await authRes.json();
   const user = account.users?.[0];
-  if (!user || user.disabled || user.email !== 'admin1@wonjongwoonghh.com') {
+  if (!user || user.disabled || user.email !== 'admin3@jongwoongbs.com') {
     return json({ error: 'Only the administrator can reset seats.' }, 403);
   }
   if (!env.FIREBASE_SECRET) {
