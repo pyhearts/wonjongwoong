@@ -32,6 +32,8 @@
       background: rgba(0,0,0,0.92);
       padding: 14px 24px;
       display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid var(--green);
@@ -51,7 +53,14 @@
       display: flex;
       gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
     }
+    [hidden] { display: none !important; }
+    .account-button { width: auto; padding: 0 12px; letter-spacing: 0; text-transform: none; }
+    .account-summary, .profile-preview { display: flex; align-items: center; gap: 8px; }
+    .account-summary { font-size: 0.9rem; }
+    #account-notice { padding: 0 16px; margin-top: 12px; }
+    #account-notice:empty { display: none; }
 
     /* 상태 뱃지 + 버튼 공통 크기 */
     .status-badge,
@@ -104,6 +113,7 @@
     .btn:hover::before { opacity: 1; }
     .btn:hover { color: #000; text-shadow: none; }
     .btn span { position: relative; z-index: 1; }
+    .btn:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 
     .btn-start { color: var(--green); border-color: var(--green); }
     .btn-start::before { background: var(--green); }
@@ -309,6 +319,11 @@
       letter-spacing: 3px;
       text-shadow: 0 0 10px var(--green);
     }
+    #claim-modal .modal { width: 380px; padding-inline: 18px; }
+    #claim-check { display: flex; justify-content: center; margin: 12px 0; }
+    #claim-status { min-height: 1.25em; font-size: 0.9rem; }
+    .modal label { display: block; margin-bottom: 5px; }
+    .modal input[type="color"] { height: 42px; padding: 4px; cursor: pointer; }
 
     .modal input {
       width: 100%;
@@ -375,12 +390,20 @@
   <h1>BOOKING 1000 SEATS COMPETITION</h1>
   <div class="header-controls">
     <div id="status-badge" class="status-badge inactive">Stopped</div>
+    <div class="account-summary" id="account-summary" hidden>
+      <span class="lb-dot" id="account-color" hidden></span>
+      <span id="account-name"></span>
+    </div>
+    <button class="btn btn-start account-button" id="google-login" disabled><span>Google 로그인</span></button>
+    <button class="btn btn-start account-button" id="account-settings" hidden><span>계정 설정</span></button>
+    <button class="btn btn-stop account-button" id="logout" hidden><span>로그아웃</span></button>
     <button class="btn btn-start" onclick="askPassword('start')"><span>Start</span></button>
     <button class="btn btn-stop"  onclick="askPassword('stop')"><span>Stop</span></button>
     <button class="btn btn-reset" onclick="askPassword('reset')"><span>Reset All</span></button>
   </div>
 </header>
 
+<p id="account-notice" role="status"></p>
 <div class="main">
   <div class="grid-wrap">
     <div class="grid-info">
@@ -401,17 +424,33 @@
 
 <div id="seat-tooltip" role="tooltip" hidden></div>
 
-<!-- 이름 입력 모달 -->
-<div class="modal-overlay" id="name-modal">
-  <div class="modal">
-    <h2 id="name-modal-title">Enter your name</h2>
-    <input type="text" id="name-input" placeholder="Name" maxlength="20" autocomplete="off">
-    <div class="modal-error" id="name-error"></div>
+<div class="modal-overlay" id="profile-modal">
+  <form class="modal" id="profile-form" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+    <h2 id="profile-title">계정 설정</h2>
+    <label for="nickname">닉네임</label>
+    <input type="text" id="nickname" maxlength="20" autocomplete="nickname" required>
+    <label for="seat-color">좌석 색상</label>
+    <input type="color" id="seat-color" value="#00d2d3">
+    <div class="modal-error" id="profile-error" role="status"></div>
     <div class="modal-btns">
-      <button class="btn btn-confirm" onclick="confirmName()">Confirm</button>
-      <button class="btn btn-cancel"  onclick="closeNameModal()">Cancel</button>
+      <button type="submit" class="btn btn-start" id="save-profile"><span>저장</span></button>
+      <button type="button" class="btn btn-cancel" id="cancel-profile"><span>취소</span></button>
     </div>
-  </div>
+  </form>
+</div>
+
+<div class="modal-overlay" id="claim-modal">
+  <form class="modal" id="claim-form" role="dialog" aria-modal="true" aria-labelledby="claim-title">
+    <h2 id="claim-title">좌석 신청</h2>
+    <p class="profile-preview"><span class="lb-dot" id="claim-color"></span><span id="claim-name"></span></p>
+    <div id="claim-check"></div>
+    <p id="claim-status" role="status"></p>
+    <div class="modal-error" id="claim-error" role="alert"></div>
+    <div class="modal-btns">
+      <button type="submit" class="btn btn-start" id="submit-claim" disabled><span>신청</span></button>
+      <button type="button" class="btn btn-cancel" id="cancel-claim"><span>취소</span></button>
+    </div>
+  </form>
 </div>
 
 <!-- 비밀번호 모달 -->
@@ -430,9 +469,10 @@
 <!-- Firebase SDK -->
 <script type="module">
   import { initializeApp }                        from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove, update, get }
+  import { getDatabase, ref, onValue }
     from "https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js";
-  import { getAuth, signInWithEmailAndPassword, signOut }
+  import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup,
+           initializeAuth, inMemoryPersistence, signInWithEmailAndPassword, signOut }
     from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
 
   // ============================================================
@@ -461,6 +501,9 @@
   const app  = initializeApp(firebaseConfig);
   const db   = getDatabase(app);
   const auth = getAuth(app);
+  const adminAuth = initializeAuth(initializeApp(firebaseConfig, "admin"), {
+    persistence: inMemoryPersistence
+  });
 
   const seatsRef  = ref(db, "seats");
   const activeRef = ref(db, "gameActive");
@@ -470,22 +513,16 @@
   let isActive  = false;
   let pendingSeat = null;  // 클릭한 좌석 번호
   let pendingAction = null; // 'start' | 'stop' | 'reset'
-
-  // ---- 색상 생성 ----
-  const COLORS = [
-    "#ff4757","#ff6348","#ff9f43","#ffd32a","#badc58",
-    "#6ab04c","#2ed573","#1dd1a1","#00d2d3","#48dbfb",
-    "#54a0ff","#2980b9","#5352ed","#a55eea","#be2edd",
-    "#f368e0","#fd79a8","#e84393","#c0392b","#ee5a24",
-    "#fdcb6e","#f9ca24","#b8e994","#26de81","#00b894",
-    "#0652dd","#9980fa","#e056fd","#ff5e57","#ffdd59"
-  ];
-
-  function nameToColor(name) {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-    return COLORS[h % COLORS.length];
-  }
+  let profile = null;
+  let profileLoading = false;
+  let savingProfile = false;
+  let claimInProgress = false;
+  let claimToken = "";
+  let claimWidget = null;
+  let turnstileAssets = null;
+  let lastClaimTime = 0;
+  let adminInProgress = false;
+  const byId = (id) => document.getElementById(id);
 
   // ---- 그리드 초기 생성 ----
   const grid = document.getElementById("grid");
@@ -579,29 +616,38 @@
   }
 
   function renderLeaderboard() {
-    const counts = {};
-    const colorMap = {};
-    for (const key in seats) {
-      const { name, color } = seats[key];
-      counts[name]   = (counts[name] || 0) + 1;
-      colorMap[name] = color;
+    const players = new Map();
+    for (const seat of Object.values(seats)) {
+      if (!seat || typeof seat.name !== "string") continue;
+      const key = seat.playerId ? `account:${seat.playerId}` : `legacy:${seat.name}`;
+      const player = players.get(key) || { count: 0, claimedAt: 0 };
+      player.count++;
+      const claimedAt = seat.claimedAt || 0;
+      if (claimedAt >= player.claimedAt) {
+        player.name = seat.name;
+        player.color = seat.color;
+        player.claimedAt = claimedAt;
+      }
+      players.set(key, player);
     }
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const sorted = [...players.values()].sort((a, b) => b.count - a.count);
     document.getElementById("people-count").textContent = sorted.length;
 
     const list = document.getElementById("lb-list");
     list.innerHTML = "";
-    sorted.forEach(([name, cnt], idx) => {
+    sorted.forEach(({ name, color, count }, idx) => {
       const rank = idx + 1;
       const item = document.createElement("div");
       item.className = "lb-item";
       const rankClass = rank === 1 ? "gold" : rank === 2 ? "silver" : rank === 3 ? "bronze" : "";
       item.innerHTML = `
         <div class="lb-rank ${rankClass}">${rank}</div>
-        <div class="lb-dot" style="background:${colorMap[name]}"></div>
-        <div class="lb-name">${escapeHtml(name)}</div>
-        <div class="lb-count">${cnt} seats</div>
+        <div class="lb-dot"></div>
+        <div class="lb-name"></div>
+        <div class="lb-count">${count} seats</div>
       `;
+      item.querySelector(".lb-dot").style.backgroundColor = color;
+      item.querySelector(".lb-name").textContent = name;
       list.appendChild(item);
     });
   }
@@ -617,71 +663,265 @@
     }
   }
 
-  // ---- 좌석 클릭 ----
-  function onSeatClick(idx) {
-    if (!isActive) return;
-    if (seats[idx]) return; // 이미 선택됨
-    pendingSeat = idx;
-    document.getElementById("name-modal-title").textContent = `#${idx + 1} — Enter your name`;
-    document.getElementById("name-input").value  = "";
-    document.getElementById("name-error").textContent = "";
-    document.getElementById("name-modal").classList.add("show");
-    setTimeout(() => document.getElementById("name-input").focus(), 100);
+  async function accountRequest(user, path, method, body) {
+    const idToken = await user.getIdToken();
+    const headers = { Authorization: `Bearer ${idToken}` };
+    if (body) headers["Content-Type"] = "application/json";
+    const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "요청에 실패했습니다. 다시 시도하세요.");
+    }
+    return data;
   }
 
-  function closeNameModal() {
-    document.getElementById("name-modal").classList.remove("show");
-    pendingSeat = null;
+  function renderAccount(user) {
+    byId("google-login").hidden = !!user;
+    byId("google-login").disabled = false;
+    byId("account-settings").hidden = !user;
+    byId("account-settings").disabled = profileLoading;
+    byId("logout").hidden = !user;
+    byId("account-summary").hidden = !user;
+    byId("account-name").textContent = profile?.nickname || "Google 로그인됨";
+    byId("account-color").hidden = !profile;
+    byId("account-color").style.backgroundColor = profile?.color || "";
   }
 
-  const CLAIM_COOLDOWN_MS = 1000;
-  let lastClaimTime = 0;
-
-  function confirmName() {
-    if (!isActive) return;   // Stop 상태면 즉시 차단
-    const name = document.getElementById("name-input").value.trim();
-    if (!name) {
-      document.getElementById("name-error").textContent = "Please enter your name.";
-      return;
-    }
-
-    // ── 방어: 클릭 속도 제한 ──
-    const now = Date.now();
-    if (now - lastClaimTime < CLAIM_COOLDOWN_MS) {
-      document.getElementById("name-error").textContent =
-        `Too fast! Wait ${((CLAIM_COOLDOWN_MS-(now-lastClaimTime))/1000).toFixed(1)}s`;
-      return;
-    }
-
-    lastClaimTime = now;
-    const color = nameToColor(name);
-    const seatId = pendingSeat;
-    closeNameModal();
-    fetch('/claim', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ seatId, name, color })
-    }).then(async res => {
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const msg = {
-          429: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.',
-          403: '게임이 활성화 상태가 아닙니다.',
-          409: '이미 예매된 좌석입니다.',
-        }[res.status] || '예매에 실패했습니다.';
-        alert(msg);
+  onAuthStateChanged(auth, async (user) => {
+    closeClaimModal();
+    closeProfileModal();
+    profile = null;
+    profileLoading = !!user;
+    renderAccount(user);
+    if (!user) return;
+    try {
+      const data = await accountRequest(user, "/profile", "GET");
+      if (auth.currentUser !== user) return;
+      profile = data.profile;
+      byId("account-notice").textContent = profile ? "" : "계정 설정에서 닉네임과 좌석 색상을 저장하세요.";
+    } catch (error) {
+      if (auth.currentUser === user) byId("account-notice").textContent = error.message;
+    } finally {
+      if (auth.currentUser === user) {
+        profileLoading = false;
+        renderAccount(user);
       }
-    });
+    }
+  });
+
+  byId("google-login").addEventListener("click", async () => {
+    byId("google-login").disabled = true;
+    byId("account-notice").textContent = "";
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (error) {
+      const messages = {
+        "auth/popup-blocked": "팝업 차단을 해제한 뒤 다시 로그인하세요.",
+        "auth/unauthorized-domain": "이 주소에서 Google 로그인을 사용할 수 없습니다.",
+        "auth/operation-not-allowed": "Firebase에서 Google 로그인 제공자를 활성화해야 합니다."
+      };
+      if (error.code !== "auth/popup-closed-by-user") {
+        byId("account-notice").textContent = messages[error.code] || "Google 로그인에 실패했습니다. 다시 시도하세요.";
+      }
+    } finally {
+      byId("google-login").disabled = false;
+    }
+  });
+
+  byId("logout").addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+      byId("account-notice").textContent = "로그아웃했습니다.";
+    } catch {
+      byId("account-notice").textContent = "로그아웃하지 못했습니다. 다시 시도하세요.";
+    }
+  });
+
+  function openProfileModal() {
+    if (savingProfile) return;
+    byId("nickname").value = profile?.nickname || "";
+    byId("seat-color").value = profile?.color || "#00d2d3";
+    byId("profile-error").textContent = "";
+    byId("profile-modal").classList.add("show");
+    byId("nickname").focus();
   }
 
-  // Enter 키 지원
-  document.getElementById("name-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") confirmName();
-    if (e.key === "Escape") closeNameModal();
+  function closeProfileModal() {
+    byId("profile-modal").classList.remove("show");
+  }
+
+  byId("account-settings").addEventListener("click", openProfileModal);
+  byId("cancel-profile").addEventListener("click", closeProfileModal);
+  byId("profile-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user || savingProfile) return;
+    const nickname = byId("nickname").value.trim();
+    const color = byId("seat-color").value;
+    if (!nickname) {
+      byId("profile-error").textContent = "닉네임을 입력하세요.";
+      return;
+    }
+    savingProfile = true;
+    byId("save-profile").disabled = true;
+    byId("cancel-profile").disabled = true;
+    byId("profile-error").textContent = "";
+    try {
+      const data = await accountRequest(user, "/profile", "PUT", { nickname, color });
+      if (auth.currentUser !== user) return;
+      profile = data.profile;
+      renderAccount(user);
+      closeProfileModal();
+      byId("account-notice").textContent = "계정 설정을 저장했습니다.";
+    } catch (error) {
+      if (auth.currentUser === user) byId("profile-error").textContent = error.message;
+    } finally {
+      savingProfile = false;
+      byId("save-profile").disabled = false;
+      byId("cancel-profile").disabled = false;
+    }
+  });
+
+  function loadTurnstile() {
+    if (!turnstileAssets) {
+      turnstileAssets = (async () => {
+        const res = await fetch("/config");
+        const config = await res.json();
+        if (!res.ok || !config.turnstileSiteKey) throw new Error("사람 확인이 아직 설정되지 않았습니다.");
+        if (!window.turnstile) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+            script.onload = resolve;
+            script.onerror = () => {
+              script.remove();
+              reject(new Error("사람 확인을 불러오지 못했습니다. 신청 창을 다시 여세요."));
+            };
+            document.head.appendChild(script);
+          });
+        }
+        return config.turnstileSiteKey;
+      })().catch((error) => {
+        turnstileAssets = null;
+        throw error;
+      });
+    }
+    return turnstileAssets;
+  }
+
+  async function onSeatClick(idx) {
+    if (!isActive || seats[idx] || pendingSeat !== null || claimInProgress) return;
+    const user = auth.currentUser;
+    if (!user) {
+      byId("account-notice").textContent = "좌석을 신청하려면 먼저 Google로 로그인하세요.";
+      byId("google-login").focus();
+      return;
+    }
+    if (profileLoading) {
+      byId("account-notice").textContent = "계정 설정을 불러오는 중입니다.";
+      return;
+    }
+    if (!profile) {
+      openProfileModal();
+      return;
+    }
+    const selection = { seatId: idx, user };
+    pendingSeat = selection;
+    byId("claim-title").textContent = `${idx + 1}번 좌석 신청`;
+    byId("claim-name").textContent = profile.nickname;
+    byId("claim-color").style.backgroundColor = profile.color;
+    byId("claim-error").textContent = "";
+    setClaimToken("", "사람 확인을 불러오는 중입니다.");
+    byId("claim-modal").classList.add("show");
+    byId("cancel-claim").focus();
+
+    try {
+      const sitekey = await loadTurnstile();
+      if (pendingSeat !== selection) return;
+      setClaimToken("", "사람 확인을 진행하고 있습니다.");
+      claimWidget = window.turnstile.render("#claim-check", {
+        sitekey,
+        action: "seat_claim",
+        appearance: "interaction-only",
+        size: byId("claim-check").clientWidth < 300 ? "compact" : "normal",
+        callback: (token) => {
+          if (pendingSeat === selection) setClaimToken(token, "사람 확인을 완료했습니다.");
+        },
+        "expired-callback": () => {
+          if (pendingSeat === selection) setClaimToken("", "사람 확인이 만료되어 다시 진행합니다.");
+        },
+        "error-callback": () => {
+          if (pendingSeat === selection) setClaimToken("", "사람 확인에 실패했습니다. 확인이 다시 시작될 때까지 기다려 주세요.");
+          return true;
+        }
+      });
+    } catch (error) {
+      if (pendingSeat === selection) {
+        setClaimToken("", "");
+        byId("claim-error").textContent = error.message || "사람 확인을 불러오지 못했습니다.";
+      }
+    }
+  }
+
+  function setClaimToken(token, message) {
+    claimToken = token;
+    byId("claim-status").textContent = message;
+    byId("submit-claim").disabled = claimInProgress || !token;
+  }
+
+  function closeClaimModal() {
+    pendingSeat = null;
+    if (claimWidget !== null) window.turnstile.remove(claimWidget);
+    claimWidget = null;
+    setClaimToken("", "");
+    byId("claim-modal").classList.remove("show");
+  }
+
+  byId("cancel-claim").addEventListener("click", closeClaimModal);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!savingProfile) closeProfileModal();
+    if (!claimInProgress) closeClaimModal();
+  });
+
+  byId("claim-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selection = pendingSeat;
+    if (!selection || !claimToken || claimInProgress) return;
+    const { seatId, user } = selection;
+    if (!isActive || seats[seatId]) {
+      byId("claim-error").textContent = isActive ? "이미 신청된 좌석입니다." : "게임이 진행 중일 때 신청할 수 있습니다.";
+      return;
+    }
+    if (Date.now() - lastClaimTime < 1000) {
+      byId("claim-error").textContent = "잠시 후 다시 신청하세요.";
+      return;
+    }
+    lastClaimTime = Date.now();
+    claimInProgress = true;
+    byId("submit-claim").disabled = true;
+    byId("cancel-claim").disabled = true;
+    byId("claim-error").textContent = "";
+    try {
+      await accountRequest(user, "/claim", "POST", { seatId, turnstileToken: claimToken });
+      if (pendingSeat !== selection) return;
+      closeClaimModal();
+      byId("account-notice").textContent = `${seatId + 1}번 좌석을 신청했습니다.`;
+    } catch (error) {
+      if (pendingSeat !== selection) return;
+      byId("claim-error").textContent = error.message;
+      setClaimToken("", "사람 확인을 다시 진행합니다.");
+      if (claimWidget !== null) window.turnstile.reset(claimWidget);
+    } finally {
+      claimInProgress = false;
+      byId("cancel-claim").disabled = false;
+      byId("submit-claim").disabled = !claimToken;
+    }
   });
 
   // ---- 비밀번호 모달 ----
   function askPassword(action) {
+    if (adminInProgress) return;
     pendingAction = action;
     const titles = { start: "Start — Admin Auth", stop: "Stop — Admin Auth", reset: "Reset All — Admin Auth" };
     document.getElementById("pw-modal-title").textContent = titles[action];
@@ -692,6 +932,7 @@
   }
 
   function closePwModal() {
+    if (adminInProgress) return;
     document.getElementById("pw-modal").classList.remove("show");
     pendingAction = null;
   }
@@ -699,31 +940,21 @@
   async function confirmPassword() {
     const pw     = document.getElementById("pw-input").value;
     const action = pendingAction;
+    if (!action || adminInProgress) return;
+    adminInProgress = true;
+    let succeeded = false;
     try {
-      const credential = await signInWithEmailAndPassword(auth, ADMIN_EMAIL, pw);
-      if (action === "reset") {
-        const idToken = await credential.user.getIdToken();
-        const res = await fetch('/reset', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${idToken}` }
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || 'Reset failed. Please try again.');
-        }
-        closePwModal();
-      } else {
-        closePwModal();
-        if (action === "start")       await set(activeRef, true);
-        else if (action === "stop")   await set(activeRef, false);
-      }
+      const credential = await signInWithEmailAndPassword(adminAuth, ADMIN_EMAIL, pw);
+      await accountRequest(credential.user, `/${action}`, "POST");
+      succeeded = true;
     } catch (e) {
       document.getElementById("pw-error").textContent =
-        action === "reset" && !e.code?.startsWith("auth/")
-          ? e.message : "Incorrect password.";
-      document.getElementById("pw-input").value = "";
+        e.code?.startsWith("auth/") ? "관리자 로그인에 실패했습니다." : e.message;
     } finally {
-      await signOut(auth);
+      document.getElementById("pw-input").value = "";
+      await signOut(adminAuth);
+      adminInProgress = false;
+      if (succeeded) closePwModal();
     }
   }
 
@@ -736,13 +967,6 @@
   window.askPassword    = askPassword;
   window.closePwModal   = closePwModal;
   window.confirmPassword = confirmPassword;
-  window.closeNameModal  = closeNameModal;
-  window.confirmName     = confirmName;
-
-  // ---- XSS 방지 ----
-  function escapeHtml(str) {
-    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  }
 </script>
 
 </body>
