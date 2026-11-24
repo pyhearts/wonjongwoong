@@ -180,6 +180,24 @@
     }
     .seat.inactive:hover { transform: none; box-shadow: none; }
 
+    /* 예약자 이름 말풍선 */
+    #seat-tooltip {
+      position: fixed;
+      z-index: 50;
+      pointer-events: none;
+      max-width: min(280px, calc(100vw - 16px));
+      max-height: calc(100vh - 16px);
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      padding: 8px 12px;
+      background: #000;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      box-shadow: 0 0 12px var(--green-glow);
+    }
+
     /* Leaderboard */
     .leaderboard {
       width: 210px;
@@ -381,6 +399,8 @@
   </div>
 </div>
 
+<div id="seat-tooltip" role="tooltip" hidden></div>
+
 <!-- 이름 입력 모달 -->
 <div class="modal-overlay" id="name-modal">
   <div class="modal">
@@ -478,6 +498,51 @@
     grid.appendChild(seat);
   }
 
+  // ---- 예약자 이름 말풍선 ----
+  const seatTooltip = document.getElementById("seat-tooltip");
+  let hoveredSeat = null;
+  let tooltipX = 0;
+  let tooltipY = 0;
+
+  function hideSeatTooltip() {
+    hoveredSeat = null;
+    seatTooltip.hidden = true;
+    seatTooltip.textContent = "";
+  }
+
+  function updateSeatTooltip() {
+    if (!hoveredSeat || !hoveredSeat.classList.contains("claimed")) {
+      seatTooltip.hidden = true;
+      seatTooltip.textContent = "";
+      return;
+    }
+    seatTooltip.textContent = hoveredSeat.dataset.owner;
+    seatTooltip.hidden = false;
+    const { width, height } = seatTooltip.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    let left = tooltipX + 12;
+    let top = tooltipY + 14;
+    if (left + width > viewportWidth - 8) left = tooltipX - width - 12;
+    if (top + height > viewportHeight - 8) top = tooltipY - height - 14;
+    seatTooltip.style.left = `${Math.max(8, Math.min(left, viewportWidth - width - 8))}px`;
+    seatTooltip.style.top = `${Math.max(8, Math.min(top, viewportHeight - height - 8))}px`;
+  }
+
+  grid.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    const seat = e.target.closest(".seat");
+    hoveredSeat = seat && grid.contains(seat) ? seat : null;
+    tooltipX = e.clientX;
+    tooltipY = e.clientY;
+    updateSeatTooltip();
+  });
+  grid.addEventListener("pointerleave", hideSeatTooltip);
+  grid.addEventListener("pointercancel", hideSeatTooltip);
+  document.addEventListener("scroll", hideSeatTooltip, true);
+  window.addEventListener("resize", hideSeatTooltip);
+  window.addEventListener("blur", hideSeatTooltip);
+
   // ---- Firebase 실시간 감지 ----
   onValue(seatsRef, (snap) => {
     seats = snap.val() || {};
@@ -501,14 +566,13 @@
         el.className = "seat claimed";
         el.style.background = data.color;
         el.dataset.owner = data.name;
-        el.title = data.name;
       } else {
         el.style.background = "";
         el.dataset.owner = "";
-        el.title = "";
         el.className = isActive ? "seat" : "seat inactive";
       }
     }
+    updateSeatTooltip();
     const claimed = Object.keys(seats).length;
     document.getElementById("claimed-count").textContent = claimed;
     document.getElementById("remain-count").textContent  = 1000 - claimed;
