@@ -29,6 +29,7 @@
     header, .main { position: relative; z-index: 1; }
 
     header {
+      z-index: 2;
       background: rgba(0,0,0,0.92);
       padding: 14px 24px;
       display: flex;
@@ -56,11 +57,40 @@
       flex-wrap: wrap;
     }
     [hidden] { display: none !important; }
-    .account-button { width: auto; padding: 0 12px; letter-spacing: 0; text-transform: none; }
+    .btn.account-button { width: auto; padding: 0 12px; letter-spacing: 0; text-transform: none; }
+    .account-controls { position: relative; min-width: 0; }
     .account-summary, .profile-preview { display: flex; align-items: center; gap: 8px; }
-    .account-summary { font-size: 0.9rem; }
-    #account-notice { padding: 0 16px; margin-top: 12px; }
-    #account-notice:empty { display: none; }
+    .btn.account-summary { max-width: min(250px, calc(100vw - 48px)); font-size: 0.95rem; }
+    .account-summary .lb-dot { flex: none; }
+    #account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .account-panel {
+      position: absolute;
+      z-index: 2;
+      top: calc(100% + 6px);
+      right: 0;
+      display: grid;
+      gap: 4px;
+      width: 160px;
+      padding: 6px;
+      background: #050f05;
+      border: 1px solid var(--green-dim);
+      box-shadow: 0 4px 18px #000;
+    }
+    .account-panel button {
+      min-height: 40px;
+      padding: 8px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .account-panel button:not(:disabled):is(:hover, :focus-visible) { background: #102710; border-color: var(--green-dim); }
+    .account-panel button:disabled { opacity: 0.6; cursor: default; }
+    .account-feedback { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 24px; }
+    .account-feedback:has(#account-notice:not(:empty), #retry-profile:not([hidden])) { margin-top: 12px; }
+    #retry-profile { height: 34px; font-size: 0.9rem; }
 
     /* 상태 뱃지 + 버튼 공통 크기 */
     .status-badge,
@@ -134,7 +164,7 @@
       align-items: flex-start;
     }
 
-    .grid-wrap { flex: 1; }
+    .grid-wrap { flex: 1; min-width: 0; }
 
     .grid-info {
       margin-bottom: 8px;
@@ -155,12 +185,13 @@
 
     #grid {
       display: grid;
-      grid-template-columns: repeat(25, 28px);
+      grid-template-columns: repeat(25, minmax(0, 28px));
       gap: 3px;
     }
 
     .seat {
       width: 28px;
+      max-width: 100%;
       height: 28px;
       background: #0a1a0a;
       border: 1px solid #00cc33;
@@ -319,9 +350,9 @@
       letter-spacing: 3px;
       text-shadow: 0 0 10px var(--green);
     }
-    #claim-modal .modal { width: 380px; padding-inline: 18px; }
     #claim-check { display: flex; justify-content: center; margin: 12px 0; }
     #claim-status { min-height: 1.25em; font-size: 0.9rem; }
+    #claim-name { min-width: 0; overflow-wrap: anywhere; }
     .modal label { display: block; margin-bottom: 5px; }
     .modal input[type="color"] { height: 42px; padding: 4px; cursor: pointer; }
 
@@ -343,6 +374,44 @@
       border-color: var(--green);
       box-shadow: 0 0 10px var(--green-glow);
     }
+
+    dialog.modal {
+      position: fixed;
+      inset: 0;
+      margin: auto;
+      width: min(var(--modal-width), calc(100% - 32px));
+      max-width: none;
+      max-height: calc(100% - 32px);
+      padding: clamp(16px, 5vw, 26px);
+      color: var(--green);
+    }
+    dialog.modal::backdrop { background: rgba(0,0,0,0.88); }
+    #profile-modal { --modal-width: 420px; }
+    #claim-modal { --modal-width: 380px; padding-inline: 18px; }
+    #profile-modal h2 { text-align: left; letter-spacing: 0; }
+    .profile-field-label { display: flex; justify-content: space-between; gap: 8px; }
+    #nickname-count, .profile-hint { color: #a1c6a9; font-size: 0.8rem; }
+    .profile-hint { margin-bottom: 12px; }
+    #profile-form fieldset { min-width: 0; border: 0; margin: 8px 0 12px; padding: 0; }
+    .profile-colors { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+    .profile-swatch {
+      width: 36px;
+      height: 36px;
+      background: var(--swatch);
+      border: 2px solid #080e08;
+      cursor: pointer;
+    }
+    .profile-swatch[aria-pressed="true"] { outline: 2px solid var(--green); outline-offset: 2px; }
+    .profile-swatch:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+    #profile-preview {
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #050f05;
+      border: 1px solid var(--green-dim);
+    }
+    #profile-preview-seat { flex: none; pointer-events: none; }
+    #profile-preview-name { min-width: 0; overflow-wrap: anywhere; }
+    #profile-status { min-height: 1.3em; font-size: 0.85rem; }
 
     .modal-error {
       color: #ff0040;
@@ -380,7 +449,11 @@
     @media (max-width: 900px) {
       .main { flex-direction: column; padding: 8px; }
       .leaderboard { width: 100%; position: static; max-height: 280px; }
-      #grid { grid-template-columns: repeat(10, 28px); }
+      #grid { grid-template-columns: repeat(10, minmax(0, 28px)); }
+    }
+    @media (max-width: 600px) {
+      .account-controls { flex-basis: 100%; }
+      .account-panel { right: auto; left: 0; }
     }
   </style>
 </head>
@@ -390,20 +463,28 @@
   <h1>BOOKING 1000 SEATS COMPETITION</h1>
   <div class="header-controls">
     <div id="status-badge" class="status-badge inactive">Stopped</div>
-    <div class="account-summary" id="account-summary" hidden>
-      <span class="lb-dot" id="account-color" hidden></span>
-      <span id="account-name"></span>
+    <div class="account-controls" id="account-controls">
+      <button type="button" class="btn btn-start account-button" id="google-login" disabled><span id="login-label">로그인 확인 중…</span></button>
+      <button type="button" class="btn btn-start account-button account-summary" id="account-toggle" aria-expanded="false" aria-controls="account-panel" hidden>
+        <span class="lb-dot" id="account-color" aria-hidden="true" hidden></span>
+        <span id="account-name"></span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div class="account-panel" id="account-panel" hidden>
+        <button type="button" id="account-settings">계정 설정</button>
+        <button type="button" id="logout">로그아웃</button>
+      </div>
     </div>
-    <button class="btn btn-start account-button" id="google-login" disabled><span>Google 로그인</span></button>
-    <button class="btn btn-start account-button" id="account-settings" hidden><span>계정 설정</span></button>
-    <button class="btn btn-stop account-button" id="logout" hidden><span>로그아웃</span></button>
     <button class="btn btn-start" onclick="askPassword('start')"><span>Start</span></button>
     <button class="btn btn-stop"  onclick="askPassword('stop')"><span>Stop</span></button>
     <button class="btn btn-reset" onclick="askPassword('reset')"><span>Reset All</span></button>
   </div>
 </header>
 
-<p id="account-notice" role="status"></p>
+<div class="account-feedback">
+  <p id="account-notice" role="status"></p>
+  <button type="button" class="btn btn-start account-button" id="retry-profile" hidden><span>다시 불러오기</span></button>
+</div>
 <div class="main">
   <div class="grid-wrap">
     <div class="grid-info">
@@ -424,23 +505,44 @@
 
 <div id="seat-tooltip" role="tooltip" hidden></div>
 
-<div class="modal-overlay" id="profile-modal">
-  <form class="modal" id="profile-form" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+<dialog class="modal" id="profile-modal" aria-labelledby="profile-title">
+  <form id="profile-form">
     <h2 id="profile-title">계정 설정</h2>
-    <label for="nickname">닉네임</label>
-    <input type="text" id="nickname" maxlength="20" autocomplete="nickname" required>
-    <label for="seat-color">좌석 색상</label>
-    <input type="color" id="seat-color" value="#00d2d3">
-    <div class="modal-error" id="profile-error" role="status"></div>
+    <div class="profile-field-label">
+      <label for="nickname">닉네임</label>
+      <span id="nickname-count" aria-hidden="true">0 / 20</span>
+    </div>
+    <input type="text" id="nickname" maxlength="20" autocomplete="nickname" aria-describedby="nickname-hint" required autofocus>
+    <p class="profile-hint" id="nickname-hint">1~20자 입력</p>
+    <fieldset>
+      <legend>좌석 색상</legend>
+      <div class="profile-colors" id="profile-colors">
+        <button type="button" class="profile-swatch" value="#00d2d3" style="--swatch: #00d2d3" aria-label="청록색" aria-pressed="false"></button>
+        <button type="button" class="profile-swatch" value="#48e889" style="--swatch: #48e889" aria-label="초록색" aria-pressed="false"></button>
+        <button type="button" class="profile-swatch" value="#ffda69" style="--swatch: #ffda69" aria-label="노란색" aria-pressed="false"></button>
+        <button type="button" class="profile-swatch" value="#ff8880" style="--swatch: #ff8880" aria-label="산호색" aria-pressed="false"></button>
+        <button type="button" class="profile-swatch" value="#88a9ff" style="--swatch: #88a9ff" aria-label="파란색" aria-pressed="false"></button>
+        <button type="button" class="profile-swatch" value="#d29aff" style="--swatch: #d29aff" aria-label="보라색" aria-pressed="false"></button>
+      </div>
+      <label for="seat-color">직접 색상 선택</label>
+      <input type="color" id="seat-color" value="#00d2d3">
+    </fieldset>
+    <div class="profile-preview" id="profile-preview">
+      <span class="seat claimed" id="profile-preview-seat" aria-hidden="true"></span>
+      <span id="profile-preview-name">닉네임 미리보기</span>
+    </div>
+    <p class="profile-hint">변경한 닉네임과 색상은 이후 신청하는 좌석에 적용됩니다.</p>
+    <p id="profile-status" role="status"></p>
+    <div class="modal-error" id="profile-error" role="alert"></div>
     <div class="modal-btns">
       <button type="submit" class="btn btn-start" id="save-profile"><span>저장</span></button>
       <button type="button" class="btn btn-cancel" id="cancel-profile"><span>취소</span></button>
     </div>
   </form>
-</div>
+</dialog>
 
-<div class="modal-overlay" id="claim-modal">
-  <form class="modal" id="claim-form" role="dialog" aria-modal="true" aria-labelledby="claim-title">
+<dialog class="modal" id="claim-modal" aria-labelledby="claim-title">
+  <form id="claim-form">
     <h2 id="claim-title">좌석 신청</h2>
     <p class="profile-preview"><span class="lb-dot" id="claim-color"></span><span id="claim-name"></span></p>
     <div id="claim-check"></div>
@@ -448,10 +550,10 @@
     <div class="modal-error" id="claim-error" role="alert"></div>
     <div class="modal-btns">
       <button type="submit" class="btn btn-start" id="submit-claim" disabled><span>신청</span></button>
-      <button type="button" class="btn btn-cancel" id="cancel-claim"><span>취소</span></button>
+      <button type="button" class="btn btn-cancel" id="cancel-claim" autofocus><span>취소</span></button>
     </div>
   </form>
-</div>
+</dialog>
 
 <!-- 비밀번호 모달 -->
 <div class="modal-overlay" id="pw-modal">
@@ -515,7 +617,13 @@
   let pendingAction = null; // 'start' | 'stop' | 'reset'
   let profile = null;
   let profileLoading = false;
+  let profileLoadFailed = false;
   let savingProfile = false;
+  let authReady = false;
+  let accountUser = null;
+  let signingIn = false;
+  let signingOut = false;
+  let seatAfterAccount = null;
   let claimInProgress = false;
   let claimToken = "";
   let claimWidget = null;
@@ -675,83 +783,192 @@
     return data;
   }
 
-  function renderAccount(user) {
-    byId("google-login").hidden = !!user;
-    byId("google-login").disabled = false;
-    byId("account-settings").hidden = !user;
-    byId("account-settings").disabled = profileLoading;
-    byId("logout").hidden = !user;
-    byId("account-summary").hidden = !user;
-    byId("account-name").textContent = profile?.nickname || "Google 로그인됨";
+  function setAccountPanel(open, restoreFocus = false) {
+    byId("account-panel").hidden = !open;
+    byId("account-toggle").setAttribute("aria-expanded", String(open));
+    if (restoreFocus) byId("account-toggle").focus();
+  }
+
+  byId("account-toggle").addEventListener("click", () => setAccountPanel(byId("account-panel").hidden));
+  document.addEventListener("click", (event) => {
+    if (!byId("account-controls").contains(event.target)) setAccountPanel(false);
+  });
+  byId("account-controls").addEventListener("focusout", (event) => {
+    if (event.relatedTarget && !byId("account-controls").contains(event.relatedTarget)) setAccountPanel(false);
+  });
+
+  function renderAccount() {
+    byId("google-login").hidden = !!accountUser;
+    byId("google-login").disabled = !authReady || signingIn;
+    byId("login-label").textContent = !authReady ? "로그인 확인 중…"
+      : signingIn ? "Google 로그인 중…" : "Google로 로그인";
+    byId("account-toggle").hidden = !accountUser;
+    byId("account-settings").disabled = profileLoading || profileLoadFailed || signingOut;
+    byId("logout").disabled = signingOut;
+    byId("logout").textContent = signingOut ? "로그아웃 중…" : "로그아웃";
+    byId("account-name").textContent = profileLoading ? "계정 불러오는 중…" : profile?.nickname || "내 계정";
     byId("account-color").hidden = !profile;
     byId("account-color").style.backgroundColor = profile?.color || "";
+    byId("retry-profile").hidden = !profileLoadFailed;
   }
 
   onAuthStateChanged(auth, async (user) => {
+    const previousUser = accountUser;
+    if (!user || (previousUser && previousUser !== user)) seatAfterAccount = null;
+    accountUser = user;
+    authReady = true;
+    setAccountPanel(false);
     closeClaimModal();
     closeProfileModal();
+    setProfileSaving(false);
     profile = null;
-    profileLoading = !!user;
-    renderAccount(user);
-    if (!user) return;
+    profileLoading = false;
+    profileLoadFailed = false;
+    if (user) {
+      await loadProfile(user);
+    } else {
+      byId("account-notice").textContent = previousUser ? "로그아웃했습니다." : "";
+      renderAccount();
+      if (previousUser) byId("google-login").focus();
+    }
+  });
+
+  async function loadProfile(user) {
+    if (profileLoading || auth.currentUser !== user) return;
+    profileLoading = true;
+    profileLoadFailed = false;
+    byId("account-notice").textContent = "계정 설정을 불러오는 중입니다.";
+    renderAccount();
     try {
       const data = await accountRequest(user, "/profile", "GET");
       if (auth.currentUser !== user) return;
       profile = data.profile;
-      byId("account-notice").textContent = profile ? "" : "계정 설정에서 닉네임과 좌석 색상을 저장하세요.";
     } catch (error) {
-      if (auth.currentUser === user) byId("account-notice").textContent = error.message;
+      if (auth.currentUser !== user) return;
+      profileLoadFailed = true;
+      byId("account-notice").textContent = `계정 설정을 불러오지 못했습니다. ${error.message}`;
     } finally {
       if (auth.currentUser === user) {
         profileLoading = false;
-        renderAccount(user);
+        renderAccount();
       }
     }
+    if (profileLoadFailed) {
+      byId("retry-profile").focus();
+      return;
+    }
+    byId("account-notice").textContent = "";
+    if (!profile) {
+      openProfileModal();
+    } else {
+      if (seatAfterAccount === null && document.activeElement === document.body) byId("account-toggle").focus();
+      resumeSeatAfterAccount();
+    }
+  }
+
+  byId("retry-profile").addEventListener("click", () => {
+    if (accountUser) loadProfile(accountUser);
   });
 
   byId("google-login").addEventListener("click", async () => {
-    byId("google-login").disabled = true;
-    byId("account-notice").textContent = "";
+    signingIn = true;
+    byId("account-notice").textContent = "Google 로그인 창에서 계정을 선택해 주세요.";
+    renderAccount();
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
     } catch (error) {
       const messages = {
         "auth/popup-blocked": "팝업 차단을 해제한 뒤 다시 로그인하세요.",
+        "auth/popup-closed-by-user": "Google 로그인 창을 닫았습니다. 다시 로그인할 수 있습니다.",
         "auth/unauthorized-domain": "이 주소에서 Google 로그인을 사용할 수 없습니다.",
-        "auth/operation-not-allowed": "Firebase에서 Google 로그인 제공자를 활성화해야 합니다."
+        "auth/operation-not-allowed": "현재 Google 로그인을 사용할 수 없습니다."
       };
-      if (error.code !== "auth/popup-closed-by-user") {
-        byId("account-notice").textContent = messages[error.code] || "Google 로그인에 실패했습니다. 다시 시도하세요.";
-      }
+      if (error.code === "auth/popup-closed-by-user") seatAfterAccount = null;
+      byId("account-notice").textContent = messages[error.code] || "Google 로그인에 실패했습니다. 다시 시도하세요.";
     } finally {
-      byId("google-login").disabled = false;
+      signingIn = false;
+      renderAccount();
+      if (!accountUser) byId("google-login").focus();
     }
   });
 
   byId("logout").addEventListener("click", async () => {
+    signingOut = true;
+    renderAccount();
     try {
       await signOut(auth);
-      byId("account-notice").textContent = "로그아웃했습니다.";
     } catch {
       byId("account-notice").textContent = "로그아웃하지 못했습니다. 다시 시도하세요.";
+    } finally {
+      signingOut = false;
+      renderAccount();
+      if (accountUser && !byId("account-panel").hidden) byId("logout").focus();
     }
   });
 
+  function updateProfilePreview() {
+    const nickname = byId("nickname").value;
+    const color = byId("seat-color").value;
+    byId("nickname-count").textContent = `${nickname.length} / ${byId("nickname").maxLength}`;
+    byId("profile-preview-name").textContent = nickname.trim() || "닉네임 미리보기";
+    byId("profile-preview-seat").style.backgroundColor = color;
+    byId("profile-colors").querySelectorAll("button").forEach((swatch) => {
+      swatch.setAttribute("aria-pressed", String(swatch.value === color));
+    });
+  }
+
+  byId("nickname").addEventListener("input", () => {
+    byId("nickname").removeAttribute("aria-invalid");
+    byId("profile-error").textContent = "";
+    updateProfilePreview();
+  });
+  byId("seat-color").addEventListener("input", updateProfilePreview);
+  byId("profile-colors").addEventListener("click", (event) => {
+    const swatch = event.target.closest(".profile-swatch");
+    if (!swatch) return;
+    byId("seat-color").value = swatch.value;
+    updateProfilePreview();
+  });
+
   function openProfileModal() {
-    if (savingProfile) return;
+    if (savingProfile || byId("profile-modal").open) return;
+    setAccountPanel(false, true);
+    byId("profile-title").textContent = profile ? "계정 설정" : "닉네임과 좌석 색상 설정";
     byId("nickname").value = profile?.nickname || "";
+    byId("nickname").removeAttribute("aria-invalid");
     byId("seat-color").value = profile?.color || "#00d2d3";
     byId("profile-error").textContent = "";
-    byId("profile-modal").classList.add("show");
-    byId("nickname").focus();
+    byId("profile-status").textContent = "";
+    updateProfilePreview();
+    byId("profile-modal").showModal();
   }
 
   function closeProfileModal() {
-    byId("profile-modal").classList.remove("show");
+    byId("profile-modal").close();
+  }
+
+  function cancelProfileModal() {
+    if (savingProfile) return;
+    seatAfterAccount = null;
+    closeProfileModal();
+    if (!profile) byId("account-notice").textContent = "좌석을 신청하려면 계정 설정을 완료해 주세요.";
+  }
+
+  function setProfileSaving(saving) {
+    savingProfile = saving;
+    byId("nickname").readOnly = saving;
+    byId("profile-form").querySelector("fieldset").disabled = saving;
+    byId("save-profile").disabled = saving;
+    byId("cancel-profile").disabled = saving;
+    byId("profile-status").textContent = saving ? "계정 설정을 저장하는 중입니다." : "";
   }
 
   byId("account-settings").addEventListener("click", openProfileModal);
-  byId("cancel-profile").addEventListener("click", closeProfileModal);
+  byId("cancel-profile").addEventListener("click", cancelProfileModal);
+  byId("profile-modal").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    cancelProfileModal();
+  });
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const user = auth.currentUser;
@@ -760,25 +977,24 @@
     const color = byId("seat-color").value;
     if (!nickname) {
       byId("profile-error").textContent = "닉네임을 입력하세요.";
+      byId("nickname").setAttribute("aria-invalid", "true");
+      byId("nickname").focus();
       return;
     }
-    savingProfile = true;
-    byId("save-profile").disabled = true;
-    byId("cancel-profile").disabled = true;
+    setProfileSaving(true);
     byId("profile-error").textContent = "";
     try {
       const data = await accountRequest(user, "/profile", "PUT", { nickname, color });
       if (auth.currentUser !== user) return;
       profile = data.profile;
-      renderAccount(user);
+      renderAccount();
       closeProfileModal();
       byId("account-notice").textContent = "계정 설정을 저장했습니다.";
+      resumeSeatAfterAccount();
     } catch (error) {
       if (auth.currentUser === user) byId("profile-error").textContent = error.message;
     } finally {
-      savingProfile = false;
-      byId("save-profile").disabled = false;
-      byId("cancel-profile").disabled = false;
+      if (auth.currentUser === user) setProfileSaving(false);
     }
   });
 
@@ -809,22 +1025,48 @@
     return turnstileAssets;
   }
 
+  function resumeSeatAfterAccount() {
+    const idx = seatAfterAccount;
+    seatAfterAccount = null;
+    if (idx === null) return;
+    if (!isActive || seats[idx]) {
+      byId("account-notice").textContent = isActive
+        ? `${idx + 1}번 좌석은 이미 신청됐습니다. 다른 좌석을 선택해 주세요.`
+        : "예약이 중지됐습니다. 예약이 시작되면 좌석을 선택해 주세요.";
+      return;
+    }
+    onSeatClick(idx);
+  }
+
   async function onSeatClick(idx) {
     if (!isActive || seats[idx] || pendingSeat !== null || claimInProgress) return;
+    if (!authReady) {
+      byId("account-notice").textContent = "로그인 상태를 확인하는 중입니다.";
+      return;
+    }
     const user = auth.currentUser;
     if (!user) {
-      byId("account-notice").textContent = "좌석을 신청하려면 먼저 Google로 로그인하세요.";
+      seatAfterAccount = idx;
+      byId("account-notice").textContent = `${idx + 1}번 좌석을 신청하려면 Google로 로그인하세요.`;
       byId("google-login").focus();
       return;
     }
     if (profileLoading) {
+      seatAfterAccount = idx;
       byId("account-notice").textContent = "계정 설정을 불러오는 중입니다.";
       return;
     }
+    if (profileLoadFailed) {
+      seatAfterAccount = idx;
+      byId("retry-profile").focus();
+      return;
+    }
     if (!profile) {
+      seatAfterAccount = idx;
       openProfileModal();
       return;
     }
+    setAccountPanel(false);
     const selection = { seatId: idx, user };
     pendingSeat = selection;
     byId("claim-title").textContent = `${idx + 1}번 좌석 신청`;
@@ -832,8 +1074,7 @@
     byId("claim-color").style.backgroundColor = profile.color;
     byId("claim-error").textContent = "";
     setClaimToken("", "사람 확인을 불러오는 중입니다.");
-    byId("claim-modal").classList.add("show");
-    byId("cancel-claim").focus();
+    byId("claim-modal").showModal();
 
     try {
       const sitekey = await loadTurnstile();
@@ -874,14 +1115,19 @@
     if (claimWidget !== null) window.turnstile.remove(claimWidget);
     claimWidget = null;
     setClaimToken("", "");
-    byId("claim-modal").classList.remove("show");
+    byId("claim-modal").close();
   }
 
   byId("cancel-claim").addEventListener("click", closeClaimModal);
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (!savingProfile) closeProfileModal();
+  byId("claim-modal").addEventListener("cancel", (event) => {
+    event.preventDefault();
     if (!claimInProgress) closeClaimModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !byId("account-panel").hidden) {
+      event.preventDefault();
+      setAccountPanel(false, true);
+    }
   });
 
   byId("claim-form").addEventListener("submit", async (event) => {
