@@ -357,22 +357,22 @@
       letter-spacing: 3px;
       text-shadow: 0 0 10px var(--green);
     }
-    #claim-check { display: flex; justify-content: center; margin: 12px 0; }
+    #claim-title { margin-bottom: 14px; }
+    #claim-check { display: flex; justify-content: center; }
     #claim-loading {
+      display: none;
       width: 18px;
       height: 18px;
-      margin-inline: auto;
+      margin: 8px auto;
       border: 2px solid var(--green-dark);
       border-top-color: var(--green);
       border-radius: 50%;
-      visibility: hidden;
     }
-    #claim-loading.is-loading { visibility: visible; animation: claim-spin 0.75s linear infinite; }
+    #claim-loading.is-loading { display: block; animation: claim-spin 0.75s linear infinite; }
     @keyframes claim-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
       #claim-loading.is-loading { animation: none; }
     }
-    #claim-name { min-width: 0; overflow-wrap: anywhere; }
     .modal label { display: block; margin-bottom: 5px; }
     .modal input[type="color"] { height: 42px; padding: 4px; cursor: pointer; }
 
@@ -407,7 +407,7 @@
     }
     dialog.modal::backdrop { background: rgba(0,0,0,0.88); }
     #profile-modal { --modal-width: 420px; }
-    #claim-modal { --modal-width: 380px; padding-inline: 18px; }
+    #claim-modal { --modal-width: 380px; padding: 18px; }
     #profile-modal h2 { text-align: left; letter-spacing: 0; }
     .profile-field-label { display: flex; justify-content: space-between; gap: 8px; }
     #nickname-count, .profile-hint { color: #a1c6a9; font-size: 0.8rem; }
@@ -442,13 +442,14 @@
       text-shadow: 0 0 6px rgba(255,0,64,0.6);
       letter-spacing: 1px;
     }
+    #claim-error { min-height: 0; margin-bottom: 0; }
+    #claim-error:not(:empty) { margin-block: 8px; }
 
     .modal-btns { display: flex; gap: 10px; margin-top: 4px; }
     .modal-btns .btn { flex: 1; padding: 10px; font-size: 1.1rem; }
     .btn-confirm { border-color: var(--green); color: var(--green); }
-    .btn-cancel  { border-color: #1a5c1a; color: #1a5c1a; }
-    .btn-cancel:hover { color: #000; border-color: #1a5c1a; box-shadow: none; }
-    .btn-cancel:hover::before { background: #1a5c1a; opacity: 1; }
+    .btn-cancel { --cancel-color: #8bd89c; border-color: var(--cancel-color); color: var(--cancel-color); }
+    .btn-cancel:hover { background: var(--cancel-color); }
 
     /* Scanline overlay */
     body::after {
@@ -563,7 +564,6 @@
 <dialog class="modal" id="claim-modal" aria-labelledby="claim-title">
   <form id="claim-form">
     <h2 id="claim-title">좌석 신청</h2>
-    <p class="profile-preview"><span class="lb-dot" id="claim-color"></span><span id="claim-name"></span></p>
     <div id="claim-check"></div>
     <div id="claim-loading" role="progressbar" aria-label="사람 확인 중"></div>
     <div class="modal-error" id="claim-error" role="alert"></div>
@@ -1089,8 +1089,6 @@
     const selection = { seatId: idx, user };
     pendingSeat = selection;
     byId("claim-title").textContent = `${idx + 1}번 좌석 신청`;
-    byId("claim-name").textContent = profile.nickname;
-    byId("claim-color").style.backgroundColor = profile.color;
     byId("claim-error").textContent = "";
     setClaimToken("", true);
     byId("claim-modal").showModal();
