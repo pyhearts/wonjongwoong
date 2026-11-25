@@ -1,0 +1,28 @@
+{
+  "name": "macro-classroom",
+  "main": "worker.js",
+  "compatibility_date": "2024-01-01",
+  "account_id": "1e10fd41f03279797ffa08ce7df69d95",
+  "vars": {
+    "FIREBASE_PROJECT_ID": "wonjongwoongbabu",
+    "FIREBASE_API_KEY": "AIzaSyAUeQxLxbMrVCgQiNvlFlMYXaZfdgDSC1M",
+    "FIREBASE_DB_URL": "https://wonjongwoongbabu-default-rtdb.firebaseio.com",
+    "ADMIN_EMAIL": "admin3@jongwoongbs.com",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAGRASBqfVJ8b5b8T"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT",
+      "id": "d886cfda59aa40c08e2ca8e1dab10c89"
+    }
+  ],
+  "rules": [
+    {
+      "type": "Text",
+      "globs": [
+        "**/*.html"
+      ],
+      "fallthrough": true
+    }
+  ]
+}

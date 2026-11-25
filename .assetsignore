@@ -1,0 +1,2 @@
+# worker.js serves index.html from its bundle. The project root has no public assets.
+*
