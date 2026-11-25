@@ -55,10 +55,17 @@
       gap: 8px;
       align-items: center;
       flex-wrap: wrap;
+      margin-inline-start: auto;
     }
     [hidden] { display: none !important; }
     .btn.account-button { width: auto; padding: 0 12px; letter-spacing: 0; text-transform: none; }
-    .account-controls { position: relative; min-width: 0; }
+    .account-controls {
+      position: relative;
+      display: flex;
+      justify-content: flex-end;
+      min-width: 0;
+      margin-inline-start: auto;
+    }
     .account-summary, .profile-preview { display: flex; align-items: center; gap: 8px; }
     .btn.account-summary { max-width: min(250px, calc(100vw - 48px)); font-size: 0.95rem; }
     .account-summary .lb-dot { flex: none; }
@@ -351,7 +358,20 @@
       text-shadow: 0 0 10px var(--green);
     }
     #claim-check { display: flex; justify-content: center; margin: 12px 0; }
-    #claim-status { min-height: 1.25em; font-size: 0.9rem; }
+    #claim-loading {
+      width: 18px;
+      height: 18px;
+      margin-inline: auto;
+      border: 2px solid var(--green-dark);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      visibility: hidden;
+    }
+    #claim-loading.is-loading { visibility: visible; animation: claim-spin 0.75s linear infinite; }
+    @keyframes claim-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      #claim-loading.is-loading { animation: none; }
+    }
     #claim-name { min-width: 0; overflow-wrap: anywhere; }
     .modal label { display: block; margin-bottom: 5px; }
     .modal input[type="color"] { height: 42px; padding: 4px; cursor: pointer; }
@@ -453,7 +473,6 @@
     }
     @media (max-width: 600px) {
       .account-controls { flex-basis: 100%; }
-      .account-panel { right: auto; left: 0; }
     }
   </style>
 </head>
@@ -463,6 +482,9 @@
   <h1>BOOKING 1000 SEATS COMPETITION</h1>
   <div class="header-controls">
     <div id="status-badge" class="status-badge inactive">Stopped</div>
+    <button class="btn btn-start" onclick="askPassword('start')"><span>Start</span></button>
+    <button class="btn btn-stop"  onclick="askPassword('stop')"><span>Stop</span></button>
+    <button class="btn btn-reset" onclick="askPassword('reset')"><span>Reset All</span></button>
     <div class="account-controls" id="account-controls">
       <button type="button" class="btn btn-start account-button" id="google-login" disabled><span id="login-label">로그인 확인 중…</span></button>
       <button type="button" class="btn btn-start account-button account-summary" id="account-toggle" aria-expanded="false" aria-controls="account-panel" hidden>
@@ -475,9 +497,6 @@
         <button type="button" id="logout">로그아웃</button>
       </div>
     </div>
-    <button class="btn btn-start" onclick="askPassword('start')"><span>Start</span></button>
-    <button class="btn btn-stop"  onclick="askPassword('stop')"><span>Stop</span></button>
-    <button class="btn btn-reset" onclick="askPassword('reset')"><span>Reset All</span></button>
   </div>
 </header>
 
@@ -546,7 +565,7 @@
     <h2 id="claim-title">좌석 신청</h2>
     <p class="profile-preview"><span class="lb-dot" id="claim-color"></span><span id="claim-name"></span></p>
     <div id="claim-check"></div>
-    <p id="claim-status" role="status"></p>
+    <div id="claim-loading" role="progressbar" aria-label="사람 확인 중"></div>
     <div class="modal-error" id="claim-error" role="alert"></div>
     <div class="modal-btns">
       <button type="submit" class="btn btn-start" id="submit-claim" disabled><span>신청</span></button>
@@ -1073,40 +1092,39 @@
     byId("claim-name").textContent = profile.nickname;
     byId("claim-color").style.backgroundColor = profile.color;
     byId("claim-error").textContent = "";
-    setClaimToken("", "사람 확인을 불러오는 중입니다.");
+    setClaimToken("", true);
     byId("claim-modal").showModal();
 
     try {
       const sitekey = await loadTurnstile();
       if (pendingSeat !== selection) return;
-      setClaimToken("", "사람 확인을 진행하고 있습니다.");
       claimWidget = window.turnstile.render("#claim-check", {
         sitekey,
         action: "seat_claim",
         appearance: "interaction-only",
         size: byId("claim-check").clientWidth < 300 ? "compact" : "normal",
         callback: (token) => {
-          if (pendingSeat === selection) setClaimToken(token, "사람 확인을 완료했습니다.");
+          if (pendingSeat === selection) setClaimToken(token);
         },
         "expired-callback": () => {
-          if (pendingSeat === selection) setClaimToken("", "사람 확인이 만료되어 다시 진행합니다.");
+          if (pendingSeat === selection) setClaimToken("", true);
         },
         "error-callback": () => {
-          if (pendingSeat === selection) setClaimToken("", "사람 확인에 실패했습니다. 확인이 다시 시작될 때까지 기다려 주세요.");
+          if (pendingSeat === selection) setClaimToken("", true);
           return true;
         }
       });
     } catch (error) {
       if (pendingSeat === selection) {
-        setClaimToken("", "");
+        setClaimToken("");
         byId("claim-error").textContent = error.message || "사람 확인을 불러오지 못했습니다.";
       }
     }
   }
 
-  function setClaimToken(token, message) {
+  function setClaimToken(token, checking = false) {
     claimToken = token;
-    byId("claim-status").textContent = message;
+    byId("claim-loading").classList.toggle("is-loading", checking);
     byId("submit-claim").disabled = claimInProgress || !token;
   }
 
@@ -1114,7 +1132,7 @@
     pendingSeat = null;
     if (claimWidget !== null) window.turnstile.remove(claimWidget);
     claimWidget = null;
-    setClaimToken("", "");
+    setClaimToken("");
     byId("claim-modal").close();
   }
 
@@ -1156,7 +1174,7 @@
     } catch (error) {
       if (pendingSeat !== selection) return;
       byId("claim-error").textContent = error.message;
-      setClaimToken("", "사람 확인을 다시 진행합니다.");
+      setClaimToken("", true);
       if (claimWidget !== null) window.turnstile.reset(claimWidget);
     } finally {
       claimInProgress = false;
