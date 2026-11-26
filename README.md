@@ -34,10 +34,6 @@ requirements.txt  - 매크로 실행에 필요한 파이썬 패키지 목록
 7. Realtime Database용 **비밀 키(Database Secret)**를 발급받으세요
    (프로젝트 설정 > 서비스 계정 > 데이터베이스 보안 비밀). 이 값은 절대
    코드에 직접 적지 말고 아래 배포 단계에서 Cloudflare Secret으로 등록합니다.
-8. 관리자 리더보드 이메일 조회용으로 같은 Google Cloud 프로젝트에 전용 서비스 계정을 만드세요.
-   프로젝트 수준의 커스텀 역할에 `firebaseauth.users.get` 권한만 추가해 이 계정에 부여하고,
-   서비스 계정 JSON 키를 발급하세요. 키 파일은 저장소 밖에 두고 Worker Secret으로 등록합니다.
-   [Google 계정 조회 API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/projects.accounts/lookup)
 
 ## 2. Cloudflare Workers 배포
 
@@ -48,14 +44,10 @@ requirements.txt  - 매크로 실행에 필요한 파이썬 패키지 목록
 4. Cloudflare 대시보드의 **Turnstile**에서 새 위젯을 만들고, 실제 Worker 호스트 이름을
    등록하세요. 필요할 때만 체크박스를 표시하려면 **Managed** 모드를 선택하세요.
    발급된 공개 사이트 키는 [wrangler.jsonc](wrangler.jsonc)의 `TURNSTILE_SITE_KEY`에 입력하세요.
-5. Firebase Database Secret, Turnstile 비밀 키, 이메일 조회용 서비스 계정 JSON을 Worker Secret으로 등록하세요.
+5. Firebase Database Secret과 Turnstile 비밀 키를 Worker Secret으로 등록하세요.
    ```bash
    wrangler secret put FIREBASE_SECRET --config ./wrangler.jsonc
    wrangler secret put TURNSTILE_SECRET_KEY --config ./wrangler.jsonc
-   ```
-   Windows PowerShell에서 `<키 파일 경로>`를 저장소 밖 JSON 경로로 바꿔 실행하세요.
-   ```powershell
-   Get-Content -Raw -LiteralPath '<키 파일 경로>' | wrangler secret put FIREBASE_AUTH_LOOKUP_CREDENTIALS --config ./wrangler.jsonc
    ```
 6. 프로젝트 폴더에서 다음 명령으로 배포하세요. `--config`는 상위 폴더에 Wrangler 설정이 있어도 이 프로젝트의 설정을 사용합니다.
    ```bash
@@ -71,6 +63,9 @@ requirements.txt  - 매크로 실행에 필요한 파이썬 패키지 목록
 
 참가자는 로그인한 뒤 계정 설정에서 닉네임과 좌석 색상을 저장하고, 좌석별로 Turnstile 확인을
 거쳐 신청합니다. 닉네임과 색상 변경은 이후 신청하는 좌석부터 적용됩니다.
+Worker는 로그인 직후 계정 설정을 불러올 때와 좌석 신청이 성공했을 때 Firebase에서 확인한 이메일을
+`participantEmails`에 저장합니다. 기존 참가자는 다시 로그인하거나 현재 로그인 상태로 페이지를
+새로고침하면 저장됩니다. 리더보드 이메일 API는 관리자 인증을 거쳐 현재 좌석 참가자의 이메일만 반환합니다.
 
 ## 3. 매크로 스크립트에 사이트 주소 반영
 
@@ -84,7 +79,7 @@ SITE_URL = "https://YOUR-WORKER-SUBDOMAIN.workers.dev/"
 ## 4. Firebase 보안 규칙 점검 (중요)
 
 Firebase 콘솔의 **Realtime Database → 규칙**에서 아래 규칙을 게시하세요. 공개 읽기는
-좌석과 게임 상태에만 허용합니다. 계정 설정과 쓰기 요청은 Worker가 인증 후 처리합니다.
+좌석과 게임 상태에만 허용합니다. 계정 설정, 참가자 이메일, 쓰기 요청은 Worker가 인증 후 처리합니다.
 다른 기능의 규칙을 병합하는 경우 상위 경로의 규칙이 아래 경로에 읽기나 쓰기를 허용하는지
 확인하세요.
 
@@ -95,7 +90,8 @@ Firebase 콘솔의 **Realtime Database → 규칙**에서 아래 규칙을 게�
     ".write": false,
     "seats": { ".read": true, ".write": false },
     "gameActive": { ".read": true, ".write": false },
-    "profiles": { ".read": false, ".write": false }
+    "profiles": { ".read": false, ".write": false },
+    "participantEmails": { ".read": false, ".write": false }
   }
 }
 ```

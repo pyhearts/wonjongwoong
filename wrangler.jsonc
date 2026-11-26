@@ -7,7 +7,7 @@
     "FIREBASE_PROJECT_ID": "wonjongwoongbabu",
     "FIREBASE_API_KEY": "AIzaSyAUeQxLxbMrVCgQiNvlFlMYXaZfdgDSC1M",
     "FIREBASE_DB_URL": "https://wonjongwoongbabu-default-rtdb.firebaseio.com",
-    "ADMIN_UID": "",
+    "ADMIN_UID": "UgGCVy2vn7Qmv8GAE0pgwuSLaqA3",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAGRASBqfVJ8b5b8T"
   },
   "kv_namespaces": [

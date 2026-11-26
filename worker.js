@@ -8,22 +8,21 @@ const ADMIN_ACTIONS = {
 const SEAT_COUNT = 1000;
 const CLAIM_ACTION = 'seat_claim';
 const ADMIN_AUTH_DURATION_MS = 10 * 60 * 1000;
-const AUTH_LOOKUP_BATCH_SIZE = 100;
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const IDENTITY_TOOLKIT_SCOPE = 'https://www.googleapis.com/auth/identitytoolkit';
+const PARTICIPANT_EMAILS_PATH = 'participantEmails';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       if (request.method === 'GET' && url.pathname === '/config') {
         return json({ turnstileSiteKey: env.TURNSTILE_SITE_KEY || '' });
       }
-      if (url.pathname === '/profile' && ['GET', 'PUT'].includes(request.method)) {
-        return await handleProfile(request, env);
+      const syncProfile = request.method === 'POST' && url.pathname === '/profile/sync';
+      if (syncProfile || (url.pathname === '/profile' && ['GET', 'PUT'].includes(request.method))) {
+        return await handleProfile(request, env, ctx, syncProfile);
       }
       if (request.method === 'POST' && url.pathname === '/claim') {
-        return await handleClaim(request, env, url.hostname);
+        return await handleClaim(request, env, ctx, url.hostname);
       }
       if ((request.method === 'POST' && (url.pathname === '/admin/verify' || Object.hasOwn(ADMIN_ACTIONS, url.pathname))) ||
           (request.method === 'GET' && url.pathname === '/admin/leaderboard-emails')) {
@@ -67,7 +66,12 @@ async function authenticate(idToken, env) {
       claims.sub !== user.localId) {
     return null;
   }
-  return { uid: user.localId, provider: claims.firebase?.sign_in_provider, authTime: claims.auth_time };
+  return {
+    uid: user.localId,
+    provider: claims.firebase?.sign_in_provider,
+    authTime: claims.auth_time,
+    email: user.emailVerified === true ? readEmail(user.email) : null
+  };
 }
 
 async function handleAdmin(request, env, path) {
@@ -95,7 +99,6 @@ async function handleAdmin(request, env, path) {
 
 async function handleLeaderboardEmails(env, expiresAt) {
   const message = '참가자 이메일을 불러오지 못했습니다.';
-  if (!env.FIREBASE_AUTH_LOOKUP_CREDENTIALS) return error('참가자 이메일 조회 설정이 필요합니다.', 503);
 
   try {
     const seatsResponse = await fetch(databaseUrl(env, 'seats'));
@@ -109,7 +112,16 @@ async function handleLeaderboardEmails(env, expiresAt) {
       if (uids.size === SEAT_COUNT) break;
     }
 
-    const emails = uids.size ? await lookupParticipantEmails(env, [...uids]) : [];
+    const emails = [];
+    if (uids.size) {
+      const response = await fetch(databaseUrl(env, PARTICIPANT_EMAILS_PATH));
+      if (!response.ok) return error(message, 502);
+      const records = (await response.json()) ?? {};
+      for (const uid of uids) {
+        const email = Object.hasOwn(records, uid) ? readEmail(records[uid]) : null;
+        if (email) emails.push({ uid, email });
+      }
+    }
     if (Date.now() >= expiresAt) return error('관리자 인증이 만료되었습니다.', 403);
     return json({ emails });
   } catch {
@@ -117,69 +129,23 @@ async function handleLeaderboardEmails(env, expiresAt) {
   }
 }
 
-async function lookupParticipantEmails(env, uids) {
-  const accessToken = await getLookupAccessToken(env.FIREBASE_AUTH_LOOKUP_CREDENTIALS);
-  const project = encodeURIComponent(env.FIREBASE_PROJECT_ID);
-  const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${project}/accounts:lookup`);
-  url.searchParams.set('fields', 'users(localId,email)');
-  const emails = [];
-
-  for (let offset = 0; offset < uids.length; offset += AUTH_LOOKUP_BATCH_SIZE) {
-    const batch = uids.slice(offset, offset + AUTH_LOOKUP_BATCH_SIZE);
-    const { method, headers, body } = jsonRequest('POST', { localId: batch });
-    const response = await fetch(url, {
-      method,
-      headers: { ...headers, Authorization: `Bearer ${accessToken}` },
-      body,
-      redirect: 'error'
-    });
-    if (!response.ok) throw new Error('Firebase Authentication lookup failed');
-    const { users = [] } = await response.json();
-    const requestedUids = new Set(batch);
-    for (const { localId, email } of users) {
-      if (requestedUids.has(localId) && typeof email === 'string' && email) emails.push({ uid: localId, email });
-    }
+async function saveParticipantEmail(env, { uid, email }) {
+  try {
+    const url = databaseUrl(env, `${PARTICIPANT_EMAILS_PATH}/${encodeURIComponent(uid)}`);
+    const response = await fetch(url, email ? jsonRequest('PUT', email) : { method: 'DELETE' });
+    if (!response.ok) console.warn('Participant email sync failed', response.status);
+  } catch {
+    console.warn('Participant email sync failed');
   }
-  return emails;
 }
 
-async function getLookupAccessToken(credentials) {
-  const { client_email, private_key, private_key_id } = JSON.parse(credentials);
-  const pem = private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
-  const keyBytes = Uint8Array.from(atob(pem), char => char.charCodeAt(0));
-  const algorithm = 'RSASSA-PKCS1-v1_5';
-  const key = await crypto.subtle.importKey('pkcs8', keyBytes, { name: algorithm, hash: 'SHA-256' }, false, ['sign']);
-  const encode = value => base64url(new TextEncoder().encode(JSON.stringify(value)));
-  const iat = Math.floor(Date.now() / 1000);
-  const header = encode({ alg: 'RS256', typ: 'JWT', kid: private_key_id });
-  const claims = encode({ iss: client_email, scope: IDENTITY_TOOLKIT_SCOPE, aud: GOOGLE_TOKEN_URL, iat, exp: iat + 300 });
-  const unsigned = `${header}.${claims}`;
-  const signature = await crypto.subtle.sign(algorithm, key, new TextEncoder().encode(unsigned));
-  const response = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: `${unsigned}.${base64url(new Uint8Array(signature))}`
-    }),
-    redirect: 'error'
-  });
-  if (!response.ok) throw new Error('Google OAuth exchange failed');
-  const { access_token } = await response.json();
-  if (typeof access_token !== 'string' || !access_token) throw new Error('Google OAuth access token missing');
-  return access_token;
-}
-
-function base64url(bytes) {
-  const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function handleProfile(request, env) {
+async function handleProfile(request, env, ctx, syncProfile) {
   const user = await authenticate(bearerToken(request), env);
   if (user?.provider !== 'google.com') return error('Google 로그인이 필요합니다.', 401);
 
   const url = databaseUrl(env, `profiles/${encodeURIComponent(user.uid)}`);
-  if (request.method === 'GET') {
+  if (syncProfile) ctx.waitUntil(saveParticipantEmail(env, user));
+  if (request.method !== 'PUT') {
     const result = await fetch(url);
     if (!result.ok) return error('계정 설정을 불러오지 못했습니다.', 502);
     return json({ profile: readProfile(await result.json()) });
@@ -192,7 +158,7 @@ async function handleProfile(request, env) {
   return json({ profile });
 }
 
-async function handleClaim(request, env, hostname) {
+async function handleClaim(request, env, ctx, hostname) {
   const { seatId, turnstileToken } = (await request.json().catch(() => null)) ?? {};
   if (!Number.isInteger(seatId) || seatId < 0 || seatId >= SEAT_COUNT) {
     return error('유효한 좌석을 선택하세요.', 400);
@@ -237,7 +203,12 @@ async function handleClaim(request, env, hostname) {
   });
   if (result.status === 412) return error('이미 신청된 좌석입니다.', 409);
   if (!result.ok) return error('좌석을 저장하지 못했습니다.', 502);
+  ctx.waitUntil(saveParticipantEmail(env, user));
   return json({ success: true });
+}
+
+function readEmail(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : null;
 }
 
 function readProfile(value) {

@@ -901,7 +901,7 @@
     byId("account-notice").textContent = "계정 설정을 불러오는 중입니다.";
     renderAccount();
     try {
-      const data = await accountRequest(user, "/profile", "GET");
+      const data = await accountRequest(user, "/profile/sync", "POST");
       if (auth.currentUser !== user) return;
       profile = data.profile;
     } catch (error) {
@@ -1278,6 +1278,7 @@
     adminSession = null;
     if (session) {
       clearInterval(session.clock);
+      clearInterval(session.emailClock);
       cancelLeaderboardEmailRequest(session);
       session.emails.clear();
       renderLeaderboard();
@@ -1332,6 +1333,7 @@
       adminSession = {
         user, token, deadline: startedAt + lifetime, wallDeadline: wallStartedAt + lifetime,
         clock: setInterval(updateAdminClock, 1000),
+        emailClock: setInterval(() => { if (!document.hidden) refreshLeaderboardEmails(true); }, 20_000),
         emails: new Map(), rosterKey: null, emailError: "", emailTimer: null, emailRequest: null
       };
       updateAdminClock();
@@ -1354,11 +1356,12 @@
 
   function cancelLeaderboardEmailRequest(session) {
     clearTimeout(session.emailTimer);
+    session.emailTimer = null;
     session.emailRequest?.abort();
     session.emailRequest = null;
   }
 
-  function refreshLeaderboardEmails() {
+  function refreshLeaderboardEmails(refreshSameRoster = false) {
     const session = currentAdminSession();
     if (!session || adminAction === "reset") return;
     const roster = new Set();
@@ -1366,10 +1369,11 @@
       if (typeof seat?.name === "string" && typeof seat.playerId === "string" && seat.playerId) roster.add(seat.playerId);
     }
     const rosterKey = JSON.stringify([...roster].sort());
-    if (session.rosterKey === rosterKey) return;
+    const sameRoster = session.rosterKey === rosterKey;
+    if (sameRoster && (!refreshSameRoster || session.emailRequest || session.emailTimer !== null)) return;
 
     session.rosterKey = rosterKey;
-    session.emailError = "";
+    if (!sameRoster) session.emailError = "";
     cancelLeaderboardEmailRequest(session);
     for (const uid of session.emails.keys()) {
       if (!roster.has(uid)) session.emails.delete(uid);
@@ -1378,6 +1382,7 @@
   }
 
   async function loadLeaderboardEmails(session, roster) {
+    session.emailTimer = null;
     if (currentAdminSession() !== session) return;
     const request = new AbortController();
     session.emailRequest = request;
@@ -1387,6 +1392,7 @@
       });
       if (currentAdminSession() !== session || session.emailRequest !== request) return;
       session.emails = new Map(emails.filter(({ uid }) => roster.has(uid)).map(({ uid, email }) => [uid, email]));
+      session.emailError = "";
     } catch (error) {
       if (currentAdminSession() !== session || session.emailRequest !== request) return;
       if (error.status === 403) {
