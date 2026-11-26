@@ -7,6 +7,10 @@ const ADMIN_ACTIONS = {
 };
 const SEAT_COUNT = 1000;
 const CLAIM_ACTION = 'seat_claim';
+const ADMIN_AUTH_DURATION_MS = 10 * 60 * 1000;
+const AUTH_LOOKUP_BATCH_SIZE = 100;
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const IDENTITY_TOOLKIT_SCOPE = 'https://www.googleapis.com/auth/identitytoolkit';
 
 export default {
   async fetch(request, env) {
@@ -21,8 +25,9 @@ export default {
       if (request.method === 'POST' && url.pathname === '/claim') {
         return await handleClaim(request, env, url.hostname);
       }
-      if (request.method === 'POST' && Object.hasOwn(ADMIN_ACTIONS, url.pathname)) {
-        return await handleAdmin(request, env, ADMIN_ACTIONS[url.pathname]);
+      if ((request.method === 'POST' && (url.pathname === '/admin/verify' || Object.hasOwn(ADMIN_ACTIONS, url.pathname))) ||
+          (request.method === 'GET' && url.pathname === '/admin/leaderboard-emails')) {
+        return await handleAdmin(request, env, url.pathname);
       }
     } catch {
       return error('서버에서 처리하지 못했습니다. 잠시 후 다시 시도하세요.', 500);
@@ -35,12 +40,16 @@ export default {
   }
 };
 
-async function authenticate(request, env) {
+function bearerToken(request) {
   const authorization = request.headers.get('Authorization') || '';
-  const match = authorization.match(/^Bearer (\S+)$/);
-  if (!match) return null;
+  return authorization.match(/^Bearer (\S+)$/)?.[1];
+}
 
-  const idToken = match[1];
+async function authenticate(idToken, env) {
+  if (!idToken) return null;
+  const payload = idToken.match(/^[\w-]+\.([\w-]+)\.[\w-]+$/)?.[1];
+  if (!payload) return null;
+
   const lookup = new URL('https://identitytoolkit.googleapis.com/v1/accounts:lookup');
   lookup.searchParams.set('key', env.FIREBASE_API_KEY);
   const authRes = await fetch(lookup, jsonRequest('POST', { idToken }));
@@ -51,29 +60,122 @@ async function authenticate(request, env) {
   if (!user?.localId || user.disabled) return null;
 
   // Firebase has accepted the ID token. Read its sign-in provider and project.
-  const payload = idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-  const claims = JSON.parse(atob(payload));
+  const bytes = Uint8Array.from(atob(payload.replace(/-/g, '+').replace(/_/g, '/')), char => char.charCodeAt(0));
+  const claims = JSON.parse(new TextDecoder().decode(bytes));
   if (claims.aud !== env.FIREBASE_PROJECT_ID ||
       claims.iss !== `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}` ||
       claims.sub !== user.localId) {
     return null;
   }
-  return { uid: user.localId, email: user.email, provider: claims.firebase?.sign_in_provider };
+  return { uid: user.localId, provider: claims.firebase?.sign_in_provider, authTime: claims.auth_time };
 }
 
-async function handleAdmin(request, env, changes) {
-  const user = await authenticate(request, env);
-  if (!user || user.provider !== 'password' || user.email !== env.ADMIN_EMAIL) {
+async function handleAdmin(request, env, path) {
+  const userToken = bearerToken(request);
+  const adminToken = request.headers.get('X-Admin-Token');
+  if (!userToken || !adminToken) return error('관리자 인증이 필요합니다.', 403);
+  if (!env.ADMIN_UID) return error('관리자 계정 설정이 필요합니다.', 503);
+
+  const [user, admin] = await Promise.all([authenticate(userToken, env), authenticate(adminToken, env)]);
+  const now = Date.now();
+  const authTime = admin?.authTime * 1000;
+  const expiresAt = authTime + ADMIN_AUTH_DURATION_MS;
+  if (user?.provider !== 'google.com' || admin?.provider !== 'password' || admin.uid !== env.ADMIN_UID ||
+      !Number.isInteger(admin.authTime) || authTime <= 0 || authTime > now || expiresAt <= now) {
     return error('관리자 인증이 필요합니다.', 403);
   }
 
-  const result = await fetch(databaseUrl(env), jsonRequest('PATCH', changes));
+  if (path === '/admin/verify') return json({ expiresAt, serverTime: now });
+  if (path === '/admin/leaderboard-emails') return await handleLeaderboardEmails(env, expiresAt);
+
+  const result = await fetch(databaseUrl(env), jsonRequest('PATCH', ADMIN_ACTIONS[path]));
   if (!result.ok) return error('게임 상태를 변경하지 못했습니다.', 502);
   return json({ success: true });
 }
 
+async function handleLeaderboardEmails(env, expiresAt) {
+  const message = '참가자 이메일을 불러오지 못했습니다.';
+  if (!env.FIREBASE_AUTH_LOOKUP_CREDENTIALS) return error('참가자 이메일 조회 설정이 필요합니다.', 503);
+
+  try {
+    const seatsResponse = await fetch(databaseUrl(env, 'seats'));
+    if (!seatsResponse.ok) return error(message, 502);
+    const seats = await seatsResponse.json();
+    const uids = new Set();
+    for (const seat of Object.values(seats ?? {})) {
+      if (typeof seat?.name === 'string' && typeof seat.playerId === 'string' && seat.playerId) {
+        uids.add(seat.playerId);
+      }
+      if (uids.size === SEAT_COUNT) break;
+    }
+
+    const emails = uids.size ? await lookupParticipantEmails(env, [...uids]) : [];
+    if (Date.now() >= expiresAt) return error('관리자 인증이 만료되었습니다.', 403);
+    return json({ emails });
+  } catch {
+    return error(message, 502);
+  }
+}
+
+async function lookupParticipantEmails(env, uids) {
+  const accessToken = await getLookupAccessToken(env.FIREBASE_AUTH_LOOKUP_CREDENTIALS);
+  const project = encodeURIComponent(env.FIREBASE_PROJECT_ID);
+  const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${project}/accounts:lookup`);
+  url.searchParams.set('fields', 'users(localId,email)');
+  const emails = [];
+
+  for (let offset = 0; offset < uids.length; offset += AUTH_LOOKUP_BATCH_SIZE) {
+    const batch = uids.slice(offset, offset + AUTH_LOOKUP_BATCH_SIZE);
+    const { method, headers, body } = jsonRequest('POST', { localId: batch });
+    const response = await fetch(url, {
+      method,
+      headers: { ...headers, Authorization: `Bearer ${accessToken}` },
+      body,
+      redirect: 'error'
+    });
+    if (!response.ok) throw new Error('Firebase Authentication lookup failed');
+    const { users = [] } = await response.json();
+    const requestedUids = new Set(batch);
+    for (const { localId, email } of users) {
+      if (requestedUids.has(localId) && typeof email === 'string' && email) emails.push({ uid: localId, email });
+    }
+  }
+  return emails;
+}
+
+async function getLookupAccessToken(credentials) {
+  const { client_email, private_key, private_key_id } = JSON.parse(credentials);
+  const pem = private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, '');
+  const keyBytes = Uint8Array.from(atob(pem), char => char.charCodeAt(0));
+  const algorithm = 'RSASSA-PKCS1-v1_5';
+  const key = await crypto.subtle.importKey('pkcs8', keyBytes, { name: algorithm, hash: 'SHA-256' }, false, ['sign']);
+  const encode = value => base64url(new TextEncoder().encode(JSON.stringify(value)));
+  const iat = Math.floor(Date.now() / 1000);
+  const header = encode({ alg: 'RS256', typ: 'JWT', kid: private_key_id });
+  const claims = encode({ iss: client_email, scope: IDENTITY_TOOLKIT_SCOPE, aud: GOOGLE_TOKEN_URL, iat, exp: iat + 300 });
+  const unsigned = `${header}.${claims}`;
+  const signature = await crypto.subtle.sign(algorithm, key, new TextEncoder().encode(unsigned));
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: `${unsigned}.${base64url(new Uint8Array(signature))}`
+    }),
+    redirect: 'error'
+  });
+  if (!response.ok) throw new Error('Google OAuth exchange failed');
+  const { access_token } = await response.json();
+  if (typeof access_token !== 'string' || !access_token) throw new Error('Google OAuth access token missing');
+  return access_token;
+}
+
+function base64url(bytes) {
+  const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 async function handleProfile(request, env) {
-  const user = await authenticate(request, env);
+  const user = await authenticate(bearerToken(request), env);
   if (user?.provider !== 'google.com') return error('Google 로그인이 필요합니다.', 401);
 
   const url = databaseUrl(env, `profiles/${encodeURIComponent(user.uid)}`);
@@ -102,7 +204,7 @@ async function handleClaim(request, env, hostname) {
     return error('사람 확인 설정을 사용할 수 없습니다.', 503);
   }
 
-  const user = await authenticate(request, env);
+  const user = await authenticate(bearerToken(request), env);
   if (user?.provider !== 'google.com') return error('Google 로그인이 필요합니다.', 401);
 
   const profileRes = await fetch(databaseUrl(env, `profiles/${encodeURIComponent(user.uid)}`));

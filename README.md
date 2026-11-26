@@ -25,14 +25,19 @@ requirements.txt  - 매크로 실행에 필요한 파이썬 패키지 목록
 4. **프로젝트 설정 > 일반 > 내 앱**에서 웹 앱을 추가하면 `firebaseConfig` 객체가
    나옵니다. 이 값을 [index.html](index.html)의 `firebaseConfig` 부분에 그대로
    붙여넣으세요.
-5. [index.html](index.html)과 [wrangler.jsonc](wrangler.jsonc)의 `ADMIN_EMAIL`을 3번에서
-   만든 관리자 이메일로 바꾸세요.
+5. [index.html](index.html)의 `ADMIN_EMAIL`을 3번에서 만든 관리자 이메일로 바꾸세요.
+   Firebase Authentication의 **사용자** 탭에서 같은 계정의 UID를 확인해
+   [wrangler.jsonc](wrangler.jsonc)의 `ADMIN_UID`에 입력하세요.
 6. [wrangler.jsonc](wrangler.jsonc)의 `FIREBASE_DB_URL`, `FIREBASE_PROJECT_ID`,
    `FIREBASE_API_KEY`를 같은 Firebase 프로젝트의 데이터베이스 주소, 프로젝트 ID,
    웹 API 키로 맞추세요.
 7. Realtime Database용 **비밀 키(Database Secret)**를 발급받으세요
    (프로젝트 설정 > 서비스 계정 > 데이터베이스 보안 비밀). 이 값은 절대
-   코드에 직접 적지 말고 아래 3단계에서 Cloudflare Secret으로만 등록합니다.
+   코드에 직접 적지 말고 아래 배포 단계에서 Cloudflare Secret으로 등록합니다.
+8. 관리자 리더보드 이메일 조회용으로 같은 Google Cloud 프로젝트에 전용 서비스 계정을 만드세요.
+   프로젝트 수준의 커스텀 역할에 `firebaseauth.users.get` 권한만 추가해 이 계정에 부여하고,
+   서비스 계정 JSON 키를 발급하세요. 키 파일은 저장소 밖에 두고 Worker Secret으로 등록합니다.
+   [Google 계정 조회 API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v1/projects.accounts/lookup)
 
 ## 2. Cloudflare Workers 배포
 
@@ -43,17 +48,23 @@ requirements.txt  - 매크로 실행에 필요한 파이썬 패키지 목록
 4. Cloudflare 대시보드의 **Turnstile**에서 새 위젯을 만들고, 실제 Worker 호스트 이름을
    등록하세요. 필요할 때만 체크박스를 표시하려면 **Managed** 모드를 선택하세요.
    발급된 공개 사이트 키는 [wrangler.jsonc](wrangler.jsonc)의 `TURNSTILE_SITE_KEY`에 입력하세요.
-5. Firebase Database Secret과 Turnstile 비밀 키를 Worker Secret으로 등록하세요.
+5. Firebase Database Secret, Turnstile 비밀 키, 이메일 조회용 서비스 계정 JSON을 Worker Secret으로 등록하세요.
    ```bash
    wrangler secret put FIREBASE_SECRET --config ./wrangler.jsonc
    wrangler secret put TURNSTILE_SECRET_KEY --config ./wrangler.jsonc
+   ```
+   Windows PowerShell에서 `<키 파일 경로>`를 저장소 밖 JSON 경로로 바꿔 실행하세요.
+   ```powershell
+   Get-Content -Raw -LiteralPath '<키 파일 경로>' | wrangler secret put FIREBASE_AUTH_LOOKUP_CREDENTIALS --config ./wrangler.jsonc
    ```
 6. 프로젝트 폴더에서 다음 명령으로 배포하세요. `--config`는 상위 폴더에 Wrangler 설정이 있어도 이 프로젝트의 설정을 사용합니다.
    ```bash
    wrangler deploy --config ./wrangler.jsonc
    ```
    배포 로그에 `macro-classroom`이 표시되면 해당 Worker 주소에서 Google 로그인, 계정 설정 저장,
-   좌석 신청, 관리자 Start/Stop/Reset을 확인하세요.
+   좌석 신청을 확인하세요. 계정 설정에서 관리자 비밀번호를 확인하면 현재 탭에서 최대 10분 동안
+   상단 Start/Stop/Reset과 리더보드의 참가자 이메일에 접근할 수 있습니다.
+   별도 탭에서 관리자 인증 없이 리더보드를 열어 이메일이 표시되지 않는지 확인하세요.
 
 이미 배포한 사이트에 기능을 추가하는 경우에도 Firebase의 Google 제공자와 승인된 도메인,
 아래 데이터베이스 규칙, Turnstile 위젯과 키를 설정해야 합니다.

@@ -319,21 +319,15 @@
       box-shadow: 0 0 4px currentColor;
     }
 
-    .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--green); }
+    .lb-identity { flex: 1; min-width: 0; }
+    .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--green); }
+    .lb-email { margin-top: 3px; color: #a1c6a9; overflow-wrap: anywhere; letter-spacing: 0; }
     .lb-count { font-family: 'VT323', monospace; font-size: 1rem; color: var(--green); flex-shrink: 0; text-shadow: 0 0 6px var(--green); }
+    #leaderboard-email-error { padding: 8px 12px; font-size: 0.8rem; color: #a1c6a9; }
+    #leaderboard-email-error p { margin-bottom: 6px; }
+    #retry-leaderboard-emails { height: 32px; font-size: 0.8rem; }
 
     /* Modals */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.88);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-    }
-    .modal-overlay.show { display: flex; }
-
     .modal {
       background: #000;
       border: 1px solid var(--green);
@@ -417,6 +411,8 @@
     dialog.modal::backdrop { background: rgba(0,0,0,0.88); }
     #profile-modal { --modal-width: 420px; }
     #claim-modal { --modal-width: 380px; padding: 18px; }
+    #reset-modal { --modal-width: 380px; }
+    #reset-modal p { margin-bottom: 14px; }
     #profile-modal h2 { text-align: left; letter-spacing: 0; }
     .profile-field-label { display: flex; justify-content: space-between; gap: 8px; }
     #nickname-count, .profile-hint { color: #a1c6a9; font-size: 0.8rem; }
@@ -441,6 +437,10 @@
     #profile-preview-seat { flex: none; pointer-events: none; }
     #profile-preview-name { min-width: 0; overflow-wrap: anywhere; }
     #profile-status { min-height: 1.3em; font-size: 0.85rem; }
+    .admin-settings { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--green-dim); }
+    .admin-settings h3 { margin-bottom: 8px; font-size: 1rem; }
+    #admin-status, #admin-time { margin-bottom: 8px; color: #a1c6a9; font-size: 0.85rem; }
+    #admin-status:empty, #admin-error:empty { display: none; }
 
     .modal-error {
       color: #ff0040;
@@ -456,7 +456,6 @@
 
     .modal-btns { display: flex; gap: 10px; margin-top: 4px; }
     .modal-btns .btn { flex: 1; padding: 10px; font-size: 1.1rem; }
-    .btn-confirm { border-color: var(--green); color: var(--green); }
     .btn-cancel { --cancel-color: #8bd89c; border-color: var(--cancel-color); color: var(--cancel-color); }
     .btn-cancel:hover { background: var(--cancel-color); }
 
@@ -492,9 +491,9 @@
   <h1>BOOKING 1000 SEATS COMPETITION</h1>
   <div class="header-controls">
     <div id="status-badge" class="status-badge inactive">Stopped</div>
-    <button class="btn btn-start" onclick="askPassword('start')"><span>Start</span></button>
-    <button class="btn btn-stop"  onclick="askPassword('stop')"><span>Stop</span></button>
-    <button class="btn btn-reset" onclick="askPassword('reset')"><span>Reset All</span></button>
+    <button type="button" class="btn btn-start" data-admin-action="start" hidden><span>Start</span></button>
+    <button type="button" class="btn btn-stop" data-admin-action="stop" hidden><span>Stop</span></button>
+    <button type="button" class="btn btn-reset" data-admin-action="reset" hidden><span>Reset All</span></button>
     <div class="account-controls" id="account-controls">
       <button type="button" class="btn btn-start account-button" id="google-login" disabled><span id="login-label">로그인 확인 중…</span></button>
       <button type="button" class="btn btn-start account-button account-summary" id="account-toggle" aria-expanded="false" aria-controls="account-panel" hidden>
@@ -527,6 +526,10 @@
     <div class="lb-stats">
       <span>Players</span>
       <span class="highlight" id="people-count">0</span>
+    </div>
+    <div id="leaderboard-email-error" hidden>
+      <p id="leaderboard-email-error-message" role="status"></p>
+      <button type="button" class="btn btn-start account-button" id="retry-leaderboard-emails"><span>이메일 다시 불러오기</span></button>
     </div>
     <div id="lb-list"></div>
   </div>
@@ -568,6 +571,18 @@
       <button type="button" class="btn btn-cancel" id="cancel-profile"><span>취소</span></button>
     </div>
   </form>
+  <section class="admin-settings" aria-labelledby="admin-title">
+    <h3 id="admin-title">관리자 인증</h3>
+    <form id="admin-form" method="dialog">
+      <label for="admin-password">관리자 비밀번호</label>
+      <input type="password" id="admin-password" autocomplete="current-password" required>
+      <button type="submit" class="btn btn-start account-button" id="verify-admin"><span>인증하기</span></button>
+    </form>
+    <p id="admin-status" role="status"></p>
+    <p id="admin-time" hidden></p>
+    <p class="modal-error" id="admin-error" role="alert"></p>
+    <button type="button" class="btn btn-cancel account-button" id="lock-admin" hidden><span>관리자 잠금</span></button>
+  </section>
 </dialog>
 
 <dialog class="modal" id="claim-modal" aria-labelledby="claim-title">
@@ -583,18 +598,16 @@
   </form>
 </dialog>
 
-<!-- 비밀번호 모달 -->
-<div class="modal-overlay" id="pw-modal">
-  <div class="modal">
-    <h2 id="pw-modal-title">Admin Authentication</h2>
-    <input type="password" id="pw-input" placeholder="Password" autocomplete="off">
-    <div class="modal-error" id="pw-error"></div>
+<dialog class="modal" id="reset-modal" aria-labelledby="reset-title" aria-describedby="reset-description">
+  <form method="dialog">
+    <h2 id="reset-title">전체 좌석 초기화</h2>
+    <p id="reset-description">게임을 중지하고 신청된 좌석을 모두 삭제합니다.</p>
     <div class="modal-btns">
-      <button class="btn btn-confirm" onclick="confirmPassword()">Confirm</button>
-      <button class="btn btn-cancel"  onclick="closePwModal()">Cancel</button>
+      <button type="submit" class="btn btn-cancel" value="cancel" autofocus><span>취소</span></button>
+      <button type="submit" class="btn btn-reset" value="reset"><span>초기화</span></button>
     </div>
-  </div>
-</div>
+  </form>
+</dialog>
 
 <!-- Firebase SDK -->
 <script type="module">
@@ -642,7 +655,6 @@
   let seats     = {};   // { "0": { name, color }, ... }
   let isActive  = false;
   let pendingSeat = null;  // 클릭한 좌석 번호
-  let pendingAction = null; // 'start' | 'stop' | 'reset'
   let profile = null;
   let profileLoading = false;
   let profileLoadFailed = false;
@@ -657,8 +669,13 @@
   let claimWidget = null;
   let turnstileAssets = null;
   let lastClaimTime = 0;
-  let adminInProgress = false;
+  let adminSession = null;
+  let adminVerification = null;
+  let adminAction = null;
+  const adminActionPendingMessage = "게임 상태를 변경하는 중…";
   const byId = (id) => document.getElementById(id);
+  const adminButtons = document.querySelectorAll("[data-admin-action]");
+  const resetDialog = byId("reset-modal");
 
   // ---- 그리드 초기 생성 ----
   const grid = document.getElementById("grid");
@@ -719,6 +736,7 @@
   // ---- Firebase 실시간 감지 ----
   onValue(seatsRef, (snap) => {
     seats = snap.val() || {};
+    refreshLeaderboardEmails();
     renderGrid();
     renderLeaderboard();
   });
@@ -752,11 +770,17 @@
   }
 
   function renderLeaderboard() {
+    const session = currentAdminSession();
+    const emailError = session?.emailError || "";
+    byId("leaderboard-email-error-message").textContent = emailError;
+    byId("leaderboard-email-error").hidden = !emailError;
+
     const players = new Map();
     for (const seat of Object.values(seats)) {
       if (!seat || typeof seat.name !== "string") continue;
-      const key = seat.playerId ? `account:${seat.playerId}` : `legacy:${seat.name}`;
-      const player = players.get(key) || { count: 0, claimedAt: 0 };
+      const uid = typeof seat.playerId === "string" ? seat.playerId : "";
+      const key = uid ? `account:${uid}` : `legacy:${seat.name}`;
+      const player = players.get(key) || { uid, count: 0, claimedAt: 0 };
       player.count++;
       const claimedAt = seat.claimedAt || 0;
       if (claimedAt >= player.claimedAt) {
@@ -771,7 +795,7 @@
 
     const list = document.getElementById("lb-list");
     list.innerHTML = "";
-    sorted.forEach(({ name, color, count }, idx) => {
+    sorted.forEach(({ uid, name, color, count }, idx) => {
       const rank = idx + 1;
       const item = document.createElement("div");
       item.className = "lb-item";
@@ -779,11 +803,18 @@
       item.innerHTML = `
         <div class="lb-rank ${rankClass}">${rank}</div>
         <div class="lb-dot"></div>
-        <div class="lb-name"></div>
+        <div class="lb-identity"><div class="lb-name"></div></div>
         <div class="lb-count">${count} seats</div>
       `;
       item.querySelector(".lb-dot").style.backgroundColor = color;
       item.querySelector(".lb-name").textContent = name;
+      const email = session?.emails.get(uid);
+      if (email) {
+        const emailLine = document.createElement("div");
+        emailLine.className = "lb-email";
+        emailLine.textContent = email;
+        item.querySelector(".lb-identity").appendChild(emailLine);
+      }
       list.appendChild(item);
     });
   }
@@ -799,14 +830,15 @@
     }
   }
 
-  async function accountRequest(user, path, method, body) {
+  async function accountRequest(user, path, method, body, { adminToken, signal } = {}) {
     const idToken = await user.getIdToken();
     const headers = { Authorization: `Bearer ${idToken}` };
+    if (adminToken) headers["X-Admin-Token"] = adminToken;
     if (body) headers["Content-Type"] = "application/json";
-    const res = await fetch(path, { method, headers, body: body && JSON.stringify(body) });
+    const res = await fetch(path, { method, headers, body: body && JSON.stringify(body), signal });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.error || "요청에 실패했습니다. 다시 시도하세요.");
+      throw Object.assign(new Error(data.error || "요청에 실패했습니다. 다시 시도하세요."), { status: res.status });
     }
     return data;
   }
@@ -831,7 +863,7 @@
     byId("login-label").textContent = !authReady ? "로그인 확인 중…"
       : signingIn ? "Google 로그인 중…" : "Google로 로그인";
     byId("account-toggle").hidden = !accountUser;
-    byId("account-settings").disabled = profileLoading || profileLoadFailed || signingOut;
+    byId("account-settings").disabled = profileLoading || signingOut;
     byId("logout").disabled = signingOut;
     byId("logout").textContent = signingOut ? "로그아웃 중…" : "로그아웃";
     byId("account-name").textContent = profileLoading ? "계정 불러오는 중…" : profile?.nickname || "내 계정";
@@ -845,6 +877,7 @@
     if (!user || (previousUser && previousUser !== user)) seatAfterAccount = null;
     accountUser = user;
     authReady = true;
+    if (user !== previousUser) lockAdmin();
     setAccountPanel(false);
     closeClaimModal();
     closeProfileModal();
@@ -922,6 +955,7 @@
 
   byId("logout").addEventListener("click", async () => {
     signingOut = true;
+    lockAdmin();
     renderAccount();
     try {
       await signOut(auth);
@@ -965,13 +999,17 @@
     byId("nickname").value = profile?.nickname || "";
     byId("nickname").removeAttribute("aria-invalid");
     byId("seat-color").value = profile?.color || "#00d2d3";
-    byId("profile-error").textContent = "";
-    byId("profile-status").textContent = "";
+    byId("profile-error").textContent = profileLoadFailed ? "계정 설정을 다시 불러온 뒤 닉네임과 색상을 변경해 주세요." : "";
+    setProfileSaving(false);
+    renderAdminControls();
     updateProfilePreview();
     byId("profile-modal").showModal();
   }
 
   function closeProfileModal() {
+    if (adminVerification) adminVerification.cancelled = true;
+    byId("admin-password").value = "";
+    byId("admin-error").textContent = "";
     byId("profile-modal").close();
   }
 
@@ -984,9 +1022,9 @@
 
   function setProfileSaving(saving) {
     savingProfile = saving;
-    byId("nickname").readOnly = saving;
-    byId("profile-form").querySelector("fieldset").disabled = saving;
-    byId("save-profile").disabled = saving;
+    byId("nickname").readOnly = saving || profileLoadFailed;
+    byId("profile-form").querySelector("fieldset").disabled = saving || profileLoadFailed;
+    byId("save-profile").disabled = saving || profileLoadFailed;
     byId("cancel-profile").disabled = saving;
     byId("profile-status").textContent = saving ? "계정 설정을 저장하는 중입니다." : "";
   }
@@ -1000,7 +1038,7 @@
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const user = auth.currentUser;
-    if (!user || savingProfile) return;
+    if (!user || savingProfile || profileLoadFailed) return;
     const nickname = byId("nickname").value.trim();
     const color = byId("seat-color").value;
     if (!nickname) {
@@ -1200,54 +1238,225 @@
     }
   });
 
-  // ---- 비밀번호 모달 ----
-  function askPassword(action) {
-    if (adminInProgress) return;
-    pendingAction = action;
-    const titles = { start: "Start — Admin Auth", stop: "Stop — Admin Auth", reset: "Reset All — Admin Auth" };
-    document.getElementById("pw-modal-title").textContent = titles[action];
-    document.getElementById("pw-input").value  = "";
-    document.getElementById("pw-error").textContent = "";
-    document.getElementById("pw-modal").classList.add("show");
-    setTimeout(() => document.getElementById("pw-input").focus(), 100);
+  function remainingAdminTime(session) {
+    return Math.min(session.deadline - performance.now(), session.wallDeadline - Date.now());
   }
 
-  function closePwModal() {
-    if (adminInProgress) return;
-    document.getElementById("pw-modal").classList.remove("show");
-    pendingAction = null;
+  function currentAdminSession() {
+    if (!adminSession || signingOut || adminSession.user !== auth.currentUser || remainingAdminTime(adminSession) <= 0) return null;
+    return adminSession;
   }
 
-  async function confirmPassword() {
-    const pw     = document.getElementById("pw-input").value;
-    const action = pendingAction;
-    if (!action || adminInProgress) return;
-    adminInProgress = true;
-    let succeeded = false;
+  function renderAdminControls() {
+    const session = currentAdminSession();
+    for (const button of adminButtons) {
+      button.hidden = !session;
+      button.disabled = !!adminAction;
+    }
+    byId("admin-form").hidden = !!session;
+    byId("admin-password").disabled = !!adminVerification;
+    byId("verify-admin").disabled = !!adminVerification;
+    byId("lock-admin").hidden = !session;
+    byId("admin-time").hidden = !session;
+    byId("admin-status").textContent = session ? "관리자 인증 완료" : adminVerification ? "관리자 인증 중…" : "";
+  }
+
+  function updateAdminClock() {
+    if (!adminSession) return;
+    const session = currentAdminSession();
+    if (!session) {
+      lockAdmin("관리자 인증이 만료되었습니다. 다시 인증해 주세요.");
+      return;
+    }
+    const seconds = Math.ceil(remainingAdminTime(session) / 1000);
+    byId("admin-time").textContent = `남은 시간 ${Math.floor(seconds / 60)}분 ${seconds % 60}초`;
+  }
+
+  function lockAdmin(message = "") {
+    if (adminVerification) adminVerification.cancelled = true;
+    const session = adminSession;
+    adminSession = null;
+    if (session) {
+      clearInterval(session.clock);
+      cancelLeaderboardEmailRequest(session);
+      session.emails.clear();
+      renderLeaderboard();
+    }
+    if (resetDialog.open) resetDialog.close();
+    if (adminAction && byId("account-notice").textContent === adminActionPendingMessage) {
+      byId("account-notice").textContent = message;
+    }
+    byId("admin-password").value = "";
+    byId("admin-time").textContent = "";
+    byId("admin-error").textContent = message;
+    renderAdminControls();
+  }
+
+  byId("lock-admin").addEventListener("click", () => {
+    lockAdmin();
+    byId("admin-password").focus();
+  });
+  window.addEventListener("pagehide", () => lockAdmin());
+  document.addEventListener("visibilitychange", updateAdminClock);
+
+  byId("admin-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user || signingOut || adminVerification || currentAdminSession() || !byId("profile-modal").open) return;
+
+    const password = byId("admin-password").value;
+    byId("admin-password").value = "";
+    byId("admin-error").textContent = "";
+    const verification = { cancelled: false };
+    adminVerification = verification;
+    renderAdminControls();
     try {
-      const credential = await signInWithEmailAndPassword(adminAuth, ADMIN_EMAIL, pw);
-      await accountRequest(credential.user, `/${action}`, "POST");
-      succeeded = true;
-    } catch (e) {
-      document.getElementById("pw-error").textContent =
-        e.code?.startsWith("auth/") ? "관리자 로그인에 실패했습니다." : e.message;
+      let token;
+      try {
+        const credential = await signInWithEmailAndPassword(adminAuth, ADMIN_EMAIL, password);
+        token = await credential.user.getIdToken();
+      } finally {
+        if (adminAuth.currentUser) await signOut(adminAuth);
+      }
+      if (verification.cancelled || auth.currentUser !== user) return;
+
+      const startedAt = performance.now();
+      const wallStartedAt = Date.now();
+      const { expiresAt, serverTime } = await accountRequest(user, "/admin/verify", "POST", undefined, { adminToken: token });
+      if (verification.cancelled || auth.currentUser !== user) return;
+
+      const lifetime = expiresAt - serverTime;
+      if (!Number.isFinite(lifetime) || lifetime <= performance.now() - startedAt || lifetime > 600_000) {
+        throw new Error("관리자 인증 시간을 확인하지 못했습니다. 다시 인증해 주세요.");
+      }
+      adminSession = {
+        user, token, deadline: startedAt + lifetime, wallDeadline: wallStartedAt + lifetime,
+        clock: setInterval(updateAdminClock, 1000),
+        emails: new Map(), rosterKey: null, emailError: "", emailTimer: null, emailRequest: null
+      };
+      updateAdminClock();
+      refreshLeaderboardEmails();
+      renderLeaderboard();
+    } catch (error) {
+      if (!verification.cancelled && auth.currentUser === user) {
+        byId("admin-error").textContent = error.code?.startsWith("auth/")
+          ? "관리자 비밀번호를 확인한 뒤 다시 시도해 주세요."
+          : error.message;
+      }
     } finally {
-      document.getElementById("pw-input").value = "";
-      await signOut(adminAuth);
-      adminInProgress = false;
-      if (succeeded) closePwModal();
+      adminVerification = null;
+      renderAdminControls();
+      if (!verification.cancelled && byId("profile-modal").open) {
+        byId(currentAdminSession() ? "lock-admin" : "admin-password").focus();
+      }
+    }
+  });
+
+  function cancelLeaderboardEmailRequest(session) {
+    clearTimeout(session.emailTimer);
+    session.emailRequest?.abort();
+    session.emailRequest = null;
+  }
+
+  function refreshLeaderboardEmails() {
+    const session = currentAdminSession();
+    if (!session || adminAction === "reset") return;
+    const roster = new Set();
+    for (const seat of Object.values(seats)) {
+      if (typeof seat?.name === "string" && typeof seat.playerId === "string" && seat.playerId) roster.add(seat.playerId);
+    }
+    const rosterKey = JSON.stringify([...roster].sort());
+    if (session.rosterKey === rosterKey) return;
+
+    session.rosterKey = rosterKey;
+    session.emailError = "";
+    cancelLeaderboardEmailRequest(session);
+    for (const uid of session.emails.keys()) {
+      if (!roster.has(uid)) session.emails.delete(uid);
+    }
+    if (roster.size) session.emailTimer = setTimeout(() => loadLeaderboardEmails(session, roster), 250);
+  }
+
+  async function loadLeaderboardEmails(session, roster) {
+    if (currentAdminSession() !== session) return;
+    const request = new AbortController();
+    session.emailRequest = request;
+    try {
+      const { emails } = await accountRequest(session.user, "/admin/leaderboard-emails", "GET", undefined, {
+        adminToken: session.token, signal: request.signal
+      });
+      if (currentAdminSession() !== session || session.emailRequest !== request) return;
+      session.emails = new Map(emails.filter(({ uid }) => roster.has(uid)).map(({ uid, email }) => [uid, email]));
+    } catch (error) {
+      if (currentAdminSession() !== session || session.emailRequest !== request) return;
+      if (error.status === 403) {
+        lockAdmin("관리자 인증이 만료되었습니다. 다시 인증해 주세요.");
+        return;
+      }
+      session.emailError = error.message || "참가자 이메일을 불러오지 못했습니다.";
+    } finally {
+      if (session.emailRequest === request) {
+        session.emailRequest = null;
+        renderLeaderboard();
+      }
     }
   }
 
-  document.getElementById("pw-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") confirmPassword();
-    if (e.key === "Escape") closePwModal();
+  byId("retry-leaderboard-emails").addEventListener("click", () => {
+    const session = currentAdminSession();
+    if (!session) return;
+    session.rosterKey = null;
+    refreshLeaderboardEmails();
+    renderLeaderboard();
   });
 
-  // HTML onclick에서 접근할 수 있도록 전역 등록
-  window.askPassword    = askPassword;
-  window.closePwModal   = closePwModal;
-  window.confirmPassword = confirmPassword;
+  for (const button of adminButtons) {
+    button.addEventListener("click", () => {
+      if (!currentAdminSession() || adminAction) return;
+      const action = button.dataset.adminAction;
+      if (action === "reset") {
+        resetDialog.showModal();
+      } else {
+        runAdminAction(action);
+      }
+    });
+  }
+
+  resetDialog.querySelector("form").addEventListener("submit", (event) => {
+    if (event.submitter?.value !== "reset") return;
+    event.preventDefault();
+    resetDialog.close();
+    runAdminAction("reset");
+  });
+
+  async function runAdminAction(action) {
+    const session = currentAdminSession();
+    if (!session || adminAction) return;
+    adminAction = action;
+    if (action === "reset") {
+      cancelLeaderboardEmailRequest(session);
+      session.rosterKey = null;
+      session.emails.clear();
+      session.emailError = "";
+      renderLeaderboard();
+    }
+    renderAdminControls();
+    byId("account-notice").textContent = adminActionPendingMessage;
+    try {
+      await accountRequest(session.user, `/${action}`, "POST", undefined, { adminToken: session.token });
+      if (currentAdminSession() !== session) return;
+      const messages = { start: "게임을 시작했습니다.", stop: "게임을 중지했습니다.", reset: "좌석을 모두 초기화했습니다." };
+      byId("account-notice").textContent = messages[action];
+    } catch (error) {
+      if (currentAdminSession() !== session) return;
+      if (error.status === 403) lockAdmin("관리자 인증이 만료되었습니다. 다시 인증해 주세요.");
+      byId("account-notice").textContent = error.message;
+    } finally {
+      adminAction = null;
+      renderAdminControls();
+      if (action === "reset") refreshLeaderboardEmails();
+    }
+  }
 </script>
 
 </body>
