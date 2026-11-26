@@ -360,18 +360,27 @@
     #claim-title { margin-bottom: 14px; }
     #claim-check { display: flex; justify-content: center; }
     #claim-loading {
-      display: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #a1c6a9;
+      font-size: 0.85rem;
+    }
+    #claim-loading:not(:empty) { margin: 8px 0; }
+    #claim-loading.is-loading::before {
+      content: "";
       width: 18px;
       height: 18px;
-      margin: 8px auto;
+      flex: none;
       border: 2px solid var(--green-dark);
       border-top-color: var(--green);
       border-radius: 50%;
+      animation: claim-spin 0.75s linear infinite;
     }
-    #claim-loading.is-loading { display: block; animation: claim-spin 0.75s linear infinite; }
     @keyframes claim-spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
-      #claim-loading.is-loading { animation: none; }
+      #claim-loading.is-loading::before { content: none; animation: none; }
     }
     .modal label { display: block; margin-bottom: 5px; }
     .modal input[type="color"] { height: 42px; padding: 4px; cursor: pointer; }
@@ -565,7 +574,7 @@
   <form id="claim-form">
     <h2 id="claim-title">좌석 신청</h2>
     <div id="claim-check"></div>
-    <div id="claim-loading" role="progressbar" aria-label="사람 확인 중"></div>
+    <p id="claim-loading" role="status"></p>
     <div class="modal-error" id="claim-error" role="alert"></div>
     <div class="modal-btns">
       <button type="submit" class="btn btn-start" id="submit-claim" disabled><span>신청</span></button>
@@ -1090,8 +1099,12 @@
     pendingSeat = selection;
     byId("claim-title").textContent = `${idx + 1}번 좌석 신청`;
     byId("claim-error").textContent = "";
-    setClaimToken("", true);
+    setClaimToken("", "사람 확인 중…", true);
     byId("claim-modal").showModal();
+
+    const updateVerification = (token, message, loading) => {
+      if (pendingSeat === selection && !claimInProgress) setClaimToken(token, message, loading);
+    };
 
     try {
       const sitekey = await loadTurnstile();
@@ -1101,14 +1114,16 @@
         action: "seat_claim",
         appearance: "interaction-only",
         size: byId("claim-check").clientWidth < 300 ? "compact" : "normal",
-        callback: (token) => {
-          if (pendingSeat === selection) setClaimToken(token);
+        callback: (token) => updateVerification(token),
+        "before-interactive-callback": () => updateVerification("", "사람 확인을 완료해 주세요."),
+        "after-interactive-callback": () => {
+          if (!claimToken) updateVerification("", "사람 확인 중…", true);
         },
-        "expired-callback": () => {
-          if (pendingSeat === selection) setClaimToken("", true);
-        },
+        "expired-callback": () => updateVerification("", "사람 확인 중…", true),
+        "timeout-callback": () => updateVerification("", "사람 확인 중…", true),
+        "unsupported-callback": () => updateVerification("", "이 브라우저에서는 사람 확인을 사용할 수 없습니다."),
         "error-callback": () => {
-          if (pendingSeat === selection) setClaimToken("", true);
+          updateVerification("", "사람 확인에 실패했습니다. 문제가 계속되면 신청 창을 다시 열어 주세요.");
           return true;
         }
       });
@@ -1120,9 +1135,11 @@
     }
   }
 
-  function setClaimToken(token, checking = false) {
+  function setClaimToken(token, message = "", loading = false) {
     claimToken = token;
-    byId("claim-loading").classList.toggle("is-loading", checking);
+    const status = byId("claim-loading");
+    if (status.textContent !== message) status.textContent = message;
+    status.classList.toggle("is-loading", loading);
     byId("submit-claim").disabled = claimInProgress || !token;
   }
 
@@ -1160,24 +1177,26 @@
       return;
     }
     lastClaimTime = Date.now();
+    const turnstileToken = claimToken;
     claimInProgress = true;
-    byId("submit-claim").disabled = true;
+    setClaimToken("", "좌석을 신청하는 중…", true);
     byId("cancel-claim").disabled = true;
     byId("claim-error").textContent = "";
     try {
-      await accountRequest(user, "/claim", "POST", { seatId, turnstileToken: claimToken });
+      await accountRequest(user, "/claim", "POST", { seatId, turnstileToken });
       if (pendingSeat !== selection) return;
       closeClaimModal();
       byId("account-notice").textContent = `${seatId + 1}번 좌석을 신청했습니다.`;
     } catch (error) {
       if (pendingSeat !== selection) return;
       byId("claim-error").textContent = error.message;
-      setClaimToken("", true);
-      if (claimWidget !== null) window.turnstile.reset(claimWidget);
     } finally {
       claimInProgress = false;
       byId("cancel-claim").disabled = false;
-      byId("submit-claim").disabled = !claimToken;
+    }
+    if (pendingSeat === selection) {
+      setClaimToken("", "사람 확인 중…", true);
+      if (claimWidget !== null) window.turnstile.reset(claimWidget);
     }
   });
 
